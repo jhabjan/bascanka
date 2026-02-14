@@ -43,7 +43,6 @@ All builds are portable - no installation required.
 <p align="center">
   <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_main_2.png" target="_blank">
     <img src="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_main_2.png"
-         alt="Bascanka main screen"
          width="100%">
   </a>
 </p>
@@ -55,7 +54,6 @@ All builds are portable - no installation required.
 <p align="center">
   <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_main.png" target="_blank">
     <img src="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_main.png"
-         alt="Bascanka main screen"
          width="100%">
   </a>
 </p>
@@ -65,7 +63,6 @@ All builds are portable - no installation required.
 <p align="center">
   <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_main.png" target="_blank">
     <img src="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_js.png"
-         alt="Bascanka main screen"
          width="100%">
   </a>
 </p>
@@ -75,7 +72,15 @@ All builds are portable - no installation required.
 <p align="center">
   <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_hex.png" target="_blank">
     <img src="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_hex.png"
-         alt="Bascanka main screen"
+         width="100%">
+  </a>
+</p>
+
+#### Custom Highlighting
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/custom_highlighting.png" target="_blank">
+    <img src="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/custom_highlighting.png"
          width="100%">
   </a>
 </p>
