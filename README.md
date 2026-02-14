@@ -47,6 +47,13 @@ All builds are portable - no installation required.
   </a>
 </p>
 
+<p align="center">
+  <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/cust_high_demo_1.gif" target="_blank">
+    <img src="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/cust_high_demo_1.gif"
+         width="100%">
+  </a>
+</p>
+
 ## Screenshots
 
 #### Text editor and Hex Editor
