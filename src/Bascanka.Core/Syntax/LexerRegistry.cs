@@ -87,5 +87,6 @@ public sealed class LexerRegistry
         Register(new GoLexer());
         Register(new RustLexer());
         Register(new MarkdownLexer());
+        Register(new CobolLexer());
     }
 }
