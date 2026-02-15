@@ -373,6 +373,7 @@ public sealed class MainForm : Form
 
             var pieceTable = new PieceTable(normalizedText);
             var editor = new EditorControl(pieceTable);
+            editor.FileSizeBytes = fileSize;
             editor.Theme = ThemeManager.Instance.CurrentTheme;
             editor.EncodingManager = new EncodingManager(encoding, hasBom);
             editor.LineEnding = detectedLineEnding;
@@ -1254,6 +1255,7 @@ public sealed class MainForm : Form
                         : new BorrowedTextSource(source);
 
                     tab.Editor.Document = new PieceTable(textSource);
+                    tab.Editor.FileSizeBytes = source.ScannedBytes;
                     tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
 
                     long docLen = tab.Editor.Document.Length;
@@ -1267,10 +1269,13 @@ public sealed class MainForm : Form
                         tab.Editor.CaretOffset = savedCaret;
                     }
 
+                    UpdateStatusBar();
+
                     if (!done)
                         batchSize = SubsequentBatchChunks;
                 }
 
+                tab.Editor.FileSizeBytes = fileSize;
                 tab.Editor.EncodingManager = new EncodingManager(source.Encoding,
                     source.Encoding.GetPreamble().Length > 0);
                 tab.Editor.LineEnding = source.DetectedLineEnding;
@@ -1296,6 +1301,7 @@ public sealed class MainForm : Form
             // Normalize line endings on reload (single pass).
             var (normalizedText, detectedLineEnding) = NormalizeLineEndings(text);
 
+            tab.Editor.FileSizeBytes = fileSize;
             tab.Editor.ReloadContent(normalizedText);
             tab.Editor.EncodingManager = new EncodingManager(encoding, hasBom);
             tab.Editor.LineEnding = detectedLineEnding;
@@ -1633,6 +1639,7 @@ public sealed class MainForm : Form
 
             var pieceTable = new PieceTable(normalizedText);
             tab.Editor.Document = pieceTable;
+            tab.Editor.FileSizeBytes = fileSize;
             tab.Editor.EncodingManager = new EncodingManager(encoding, hasBom);
             tab.Editor.LineEnding = detectedLineEnding;
             WireEditorEvents(tab.Editor);
@@ -1955,6 +1962,7 @@ public sealed class MainForm : Form
             byte[] bytes = encoding.GetBytes(text);
             fs.Write(bytes, 0, bytes.Length);
 
+            tab.Editor.FileSizeBytes = fs.Length;
             tab.IsModified = false;
             RefreshTabDisplay(tab);
             UpdateTitleBar();
@@ -2638,6 +2646,7 @@ public sealed class MainForm : Form
                     : new BorrowedTextSource(source);
 
                 tab.Editor.Document = new PieceTable(textSource);
+                tab.Editor.FileSizeBytes = source.ScannedBytes;
                 tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
 
                 // Restore caret and selection if still within bounds.
@@ -2652,11 +2661,14 @@ public sealed class MainForm : Form
                     tab.Editor.CaretOffset = savedCaret;
                 }
 
+                UpdateStatusBar();
+
                 if (!done)
                     batchSize = SubsequentBatchChunks;
             }
 
-            // Final setup.
+            // Final setup — set exact file size from disk.
+            tab.Editor.FileSizeBytes = fileSize;
             tab.Editor.EncodingManager = new EncodingManager(source.Encoding,
                 source.Encoding.GetPreamble().Length > 0);
             tab.Editor.LineEnding = source.DetectedLineEnding;

@@ -32,6 +32,7 @@ public sealed class EditorSurface : Control
 
     // Calculated font metrics.
     private int _charWidth;
+    private int _cjkCharWidth;
     private int _lineHeight;
 
     // References to collaborating managers.
@@ -325,6 +326,11 @@ public sealed class EditorSurface : Control
             TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         _charWidth = Math.Max(1, size.Width);
         _lineHeight = Math.Max(1, size.Height + EditorControl.DefaultLineSpacing);
+
+        // Measure actual CJK character width via font fallback.
+        Size cjkSize = TextRenderer.MeasureText(g, "\u4E2D", _editorFont, Size.Empty,
+            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        _cjkCharWidth = Math.Max(_charWidth, cjkSize.Width);
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -536,8 +542,8 @@ public sealed class EditorSurface : Control
                     // Map segment positions back to original line coordinates.
                     int origSegStart = segStart + expandedClipStart;
                     int origSegLen = segLen;
-                    RenderWrapSelectionBackground(g, lineStartOffset, lineText,
-                        origSegStart, origSegLen, y, selBrush);
+                    RenderWrapSelectionBackground(g, lineStartOffset, lineText, expanded,
+                        segStart, origSegStart, origSegLen, y, selBrush);
 
                     // Text rendering.
                     if (segLen > 0)
@@ -688,8 +694,8 @@ public sealed class EditorSurface : Control
                 if (_folding is not null && _folding.IsFoldStart(docLine) && _folding.IsCollapsed(docLine))
                 {
                     // Use original line length for fold ellipsis position.
-                    int textEndCol = lineText.Length;
-                    int textEndX = textEndCol * _charWidth - hOffset * _charWidth + TextLeftPadding;
+                    string expandedFold = ExpandTabs(lineText);
+                    int textEndX = DisplayX(expandedFold, hOffset, expandedFold.Length) + TextLeftPadding;
                     string indicator = " ... ";
                     using var bgBrush = new SolidBrush(Color.FromArgb(EditorControl.DefaultFoldIndicatorOpacity, 128, 128, 128));
                     int indicatorWidth = indicator.Length * _charWidth;
@@ -733,21 +739,20 @@ public sealed class EditorSurface : Control
             int tokenStart = ExpandedColumn(lineText, token.Start);
             int tokenEnd = ExpandedColumn(lineText, token.End);
 
-            // Clip to visible range.
-            int drawStart = Math.Max(tokenStart - hOffset, 0);
-            int drawEnd = Math.Min(tokenEnd - hOffset, MaxVisibleColumns + 1);
-
-            if (drawEnd <= 0 || drawStart >= MaxVisibleColumns + 1) continue;
-
+            // Clip to visible character range.
             int srcStart = Math.Max(tokenStart, hOffset);
             int srcEnd = Math.Min(tokenEnd, hOffset + MaxVisibleColumns + 1);
 
             if (srcStart >= expanded.Length || srcEnd <= srcStart) continue;
 
+            // Pixel-level visibility check.
+            int px = DisplayX(expanded, hOffset, srcStart);
+            if (px > ClientSize.Width) continue;
+
             string fragment = expanded.Substring(srcStart,
                 Math.Min(srcEnd - srcStart, expanded.Length - srcStart));
 
-            int x = (srcStart - hOffset) * _charWidth + TextLeftPadding;
+            int x = px + TextLeftPadding;
             Color color = _theme.GetTokenColor(token.Type);
 
             TextRenderer.DrawText(g, fragment, _editorFont,
@@ -770,6 +775,7 @@ public sealed class EditorSurface : Control
         int startCol = hOffset;
         int endCol = Math.Min(hOffset + MaxVisibleColumns + 1, ExpandTabs(lineText).Length);
 
+        string expanded = ExpandTabs(lineText);
         foreach (var span in result.Spans)
         {
             if (span.Background == Color.Empty) continue;
@@ -779,8 +785,8 @@ public sealed class EditorSurface : Control
             int drawEnd = Math.Min(expEnd, endCol);
             if (drawStart >= drawEnd) continue;
 
-            int x = (drawStart - hOffset) * _charWidth + TextLeftPadding;
-            int w = (drawEnd - drawStart) * _charWidth;
+            int x = DisplayX(expanded, hOffset, drawStart) + TextLeftPadding;
+            int w = DisplayX(expanded, drawStart, drawEnd);
             using var bgBrush = new SolidBrush(span.Background);
             g.FillRectangle(bgBrush, x, y, w, _lineHeight);
         }
@@ -805,8 +811,8 @@ public sealed class EditorSurface : Control
             int drawEnd = Math.Min(expEnd, segEnd);
             if (drawStart >= drawEnd) continue;
 
-            int x = (drawStart - segStart) * _charWidth + TextLeftPadding;
-            int w = (drawEnd - drawStart) * _charWidth;
+            int x = DisplayX(expanded, segStart, drawStart) + TextLeftPadding;
+            int w = DisplayX(expanded, drawStart, drawEnd);
             using var bgBrush = new SolidBrush(span.Background);
             g.FillRectangle(bgBrush, x, y, w, _lineHeight);
         }
@@ -902,7 +908,7 @@ public sealed class EditorSurface : Control
             {
                 int gapEnd = Math.Min(spanStart, segEnd);
                 string fragment = expanded.Substring(cursor, gapEnd - cursor);
-                int x = (cursor - segStart) * _charWidth + TextLeftPadding;
+                int x = DisplayX(expanded, segStart, cursor) + TextLeftPadding;
                 TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), defaultFg, DrawFlags);
             }
 
@@ -911,7 +917,7 @@ public sealed class EditorSurface : Control
             if (drawStart < drawEnd)
             {
                 string fragment = expanded.Substring(drawStart, drawEnd - drawStart);
-                int x = (drawStart - segStart) * _charWidth + TextLeftPadding;
+                int x = DisplayX(expanded, segStart, drawStart) + TextLeftPadding;
                 Color fg = spanFg != Color.Empty ? spanFg : defaultFg;
                 TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), fg, DrawFlags);
             }
@@ -922,7 +928,7 @@ public sealed class EditorSurface : Control
         if (cursor < segEnd)
         {
             string fragment = expanded.Substring(cursor, segEnd - cursor);
-            int x = (cursor - segStart) * _charWidth + TextLeftPadding;
+            int x = DisplayX(expanded, segStart, cursor) + TextLeftPadding;
             TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), defaultFg, DrawFlags);
         }
     }
@@ -934,7 +940,7 @@ public sealed class EditorSurface : Control
 
         int drawEnd = Math.Min(colEnd, expanded.Length);
         string fragment = expanded.Substring(colStart, drawEnd - colStart);
-        int x = (colStart - hOffset) * _charWidth + TextLeftPadding;
+        int x = DisplayX(expanded, hOffset, colStart) + TextLeftPadding;
 
         TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), fgColor, DrawFlags);
     }
@@ -954,11 +960,12 @@ public sealed class EditorSurface : Control
         long drawSelStart = Math.Max(selStart, lineStart) - lineStart;
         long drawSelEnd = Math.Min(selEnd, lineEnd) - lineStart;
 
-        int expandedStart = ExpandedColumn(lineText, (int)drawSelStart) - hOffset;
-        int expandedEnd = ExpandedColumn(lineText, (int)drawSelEnd) - hOffset;
+        string expanded = ExpandTabs(lineText);
+        int charStart = ExpandedColumn(lineText, (int)drawSelStart);
+        int charEnd = ExpandedColumn(lineText, (int)drawSelEnd);
 
-        int x1 = Math.Max(0, expandedStart * _charWidth) + TextLeftPadding;
-        int x2 = Math.Max(x1, expandedEnd * _charWidth + TextLeftPadding);
+        int x1 = Math.Max(0, DisplayX(expanded, hOffset, charStart)) + TextLeftPadding;
+        int x2 = Math.Max(x1, DisplayX(expanded, hOffset, charEnd) + TextLeftPadding);
 
         // If selection extends past line end (i.e. includes the newline), extend slightly.
         if (selEnd > lineEnd)
@@ -974,11 +981,20 @@ public sealed class EditorSurface : Control
         if (docLine < _selection.ColumnStartLine || docLine > _selection.ColumnEndLine) return;
 
         // Column selection stores visual (expanded) columns directly.
+        // Columns may extend past the text length (virtual space for box selection).
+        string expanded = ExpandTabs(lineText);
         int leftCol = (int)_selection.ColumnLeftCol;
         int rightCol = (int)_selection.ColumnRightCol;
+        int textLen = expanded.Length;
 
-        int x1 = Math.Max(0, leftCol - hOffset) * _charWidth + TextLeftPadding;
-        int x2 = Math.Max(x1, (rightCol - hOffset) * _charWidth + TextLeftPadding);
+        int x1px = DisplayX(expanded, hOffset, Math.Min(leftCol, textLen));
+        if (leftCol > textLen) x1px += (leftCol - textLen) * _charWidth;
+
+        int x2px = DisplayX(expanded, hOffset, Math.Min(rightCol, textLen));
+        if (rightCol > textLen) x2px += (rightCol - textLen) * _charWidth;
+
+        int x1 = Math.Max(0, x1px) + TextLeftPadding;
+        int x2 = Math.Max(x1, x2px + TextLeftPadding);
 
         if (x2 > x1)
             g.FillRectangle(selBrush, x1, y, x2 - x1, _lineHeight);
@@ -988,15 +1004,16 @@ public sealed class EditorSurface : Control
     {
         if (SearchHighlightPattern is null) return;
 
+        string expanded = ExpandTabs(lineText);
         foreach (System.Text.RegularExpressions.Match m in SearchHighlightPattern.Matches(lineText))
         {
             if (m.Length == 0) continue;
 
-            int expandedStart = ExpandedColumn(lineText, m.Index) - hOffset;
-            int expandedEnd = ExpandedColumn(lineText, m.Index + m.Length) - hOffset;
+            int charStart = ExpandedColumn(lineText, m.Index);
+            int charEnd = ExpandedColumn(lineText, m.Index + m.Length);
 
-            int x1 = Math.Max(0, expandedStart * _charWidth) + TextLeftPadding;
-            int x2 = Math.Max(x1, expandedEnd * _charWidth + TextLeftPadding);
+            int x1 = Math.Max(0, DisplayX(expanded, hOffset, charStart)) + TextLeftPadding;
+            int x2 = Math.Max(x1, DisplayX(expanded, hOffset, charEnd) + TextLeftPadding);
 
             g.FillRectangle(matchBrush, x1, y, x2 - x1, _lineHeight);
         }
@@ -1026,14 +1043,15 @@ public sealed class EditorSurface : Control
         // Character-level highlights.
         if (marker.CharDiffs is { Count: > 0 })
         {
+            string expanded = ExpandTabs(lineText);
             using var charBrush = new SolidBrush(_theme.DiffModifiedCharBackground);
             foreach (var range in marker.CharDiffs)
             {
                 int startCol = ExpandedColumn(lineText, Math.Min(range.Start, lineText.Length));
                 int endCol = ExpandedColumn(lineText, Math.Min(range.Start + range.Length, lineText.Length));
 
-                int x1 = (startCol - hOffset) * _charWidth + TextLeftPadding;
-                int x2 = (endCol - hOffset) * _charWidth + TextLeftPadding;
+                int x1 = DisplayX(expanded, hOffset, startCol) + TextLeftPadding;
+                int x2 = DisplayX(expanded, hOffset, endCol) + TextLeftPadding;
 
                 if (x2 > x1 && x2 > 0)
                     g.FillRectangle(charBrush, Math.Max(0, x1), y, x2 - Math.Max(0, x1), _lineHeight);
@@ -1065,8 +1083,9 @@ public sealed class EditorSurface : Control
             ? _document.GetLine(caretLine)
             : string.Empty;
 
+        string expanded = ExpandTabs(lineText);
         int expandedCol = ExpandedColumn(lineText, (int)Math.Min(caretCol, lineText.Length));
-        int x = (expandedCol - hOffset) * _charWidth + TextLeftPadding;
+        int x = DisplayX(expanded, hOffset, expandedCol) + TextLeftPadding;
 
         if (x < 0 || x > ClientSize.Width) return;
 
@@ -1097,7 +1116,7 @@ public sealed class EditorSurface : Control
 
             string fragment = expanded.Substring(drawStart,
                 Math.Min(drawEnd - drawStart, expanded.Length - drawStart));
-            int x = (drawStart - segStart) * _charWidth + TextLeftPadding;
+            int x = DisplayX(expanded, segStart, drawStart) + TextLeftPadding;
             Color color = _theme.GetTokenColor(token.Type);
 
             TextRenderer.DrawText(g, fragment, _editorFont,
@@ -1106,7 +1125,7 @@ public sealed class EditorSurface : Control
     }
 
     private void RenderWrapSelectionBackground(Graphics g, long lineStartOffset,
-        string lineText, int segStartExpanded, int segLen, int y, Brush selBrush)
+        string lineText, string expanded, int localSegStart, int segStartExpanded, int segLen, int y, Brush selBrush)
     {
         if (_selection is null || !_selection.HasSelection) return;
 
@@ -1136,8 +1155,8 @@ public sealed class EditorSurface : Control
 
         if (drawEnd <= drawStart) return;
 
-        int x1 = drawStart * _charWidth + TextLeftPadding;
-        int x2 = drawEnd * _charWidth + TextLeftPadding;
+        int x1 = DisplayX(expanded, localSegStart, localSegStart + drawStart) + TextLeftPadding;
+        int x2 = DisplayX(expanded, localSegStart, localSegStart + drawEnd) + TextLeftPadding;
         g.FillRectangle(selBrush, x1, y, x2 - x1, _lineHeight);
     }
 
@@ -1183,7 +1202,9 @@ public sealed class EditorSurface : Control
                 int caretVisualRow = visualRow + wrapRow - startRow;
 
                 int y = caretVisualRow * _lineHeight;
-                int x = colInRow * _charWidth + TextLeftPadding;
+                string expandedStr = ExpandTabs(lineText);
+                int rowStart = wrapRow * wrapCols;
+                int x = DisplayX(expandedStr, rowStart, Math.Min(rowStart + colInRow, expandedStr.Length)) + TextLeftPadding;
 
                 if (y >= 0 && y <= ClientSize.Height)
                 {
@@ -1214,48 +1235,56 @@ public sealed class EditorSurface : Control
             _theme.EditorForeground.G,
             _theme.EditorForeground.B);
 
-        int col = 0;
+        int col = 0;        // character index in expanded string
+        int dispPx = 0;     // pixel position from start of line
+        int hDispPx = 0;    // pixel position for hOffset
+        // Pre-compute pixel offset for hOffset.
+        {
+            string expanded = ExpandTabs(lineText);
+            hDispPx = DisplayX(expanded, 0, Math.Min(hOffset, expanded.Length));
+        }
+
         for (int i = 0; i < lineText.Length; i++)
         {
             char c = lineText[i];
             if (c == '\t')
             {
                 int tabWidth = _tabSize - (col % _tabSize);
-                int x = (col - hOffset) * _charWidth + TextLeftPadding;
+                int x = dispPx - hDispPx + TextLeftPadding;
                 if (x >= 0 && x < ClientSize.Width)
                 {
-                    // Draw a right arrow (→) at the tab start position.
                     TextRenderer.DrawText(g, "\u2192", _editorFont,
                         new Point(x, y), wsColor, DrawFlags);
                 }
                 col += tabWidth;
+                dispPx += tabWidth * _charWidth;
             }
             else if (c == ' ')
             {
-                int x = (col - hOffset) * _charWidth + TextLeftPadding;
+                int x = dispPx - hDispPx + TextLeftPadding;
                 if (x >= 0 && x < ClientSize.Width)
                 {
-                    // Draw a centered middle dot (·).
                     TextRenderer.DrawText(g, "\u00B7", _editorFont,
                         new Point(x, y), wsColor, DrawFlags);
                 }
                 col++;
+                dispPx += _charWidth;
             }
             else if (c == '\r' || c == '\n')
             {
-                // Skip — we draw the line ending indicator after the loop.
                 break;
             }
             else
             {
                 col++;
+                dispPx += GetCharDisplayWidth(c) > 1 ? _cjkCharWidth : _charWidth;
             }
         }
 
         // Draw line ending indicator (¶) after the last character.
         if (!isLastLine)
         {
-            int x = (col - hOffset) * _charWidth + TextLeftPadding;
+            int x = dispPx - hDispPx + TextLeftPadding;
             if (x >= 0 && x < ClientSize.Width)
             {
                 TextRenderer.DrawText(g, "\u00B6", _editorFont,
@@ -1291,7 +1320,7 @@ public sealed class EditorSurface : Control
                 int tabWidth = _tabSize - (col % _tabSize);
                 if (col >= segStart && col < segEnd)
                 {
-                    int x = (col - segStart) * _charWidth + TextLeftPadding;
+                    int x = DisplayX(expanded, segStart, col) + TextLeftPadding;
                     TextRenderer.DrawText(g, "\u2192", _editorFont,
                         new Point(x, y), wsColor, DrawFlags);
                 }
@@ -1301,7 +1330,7 @@ public sealed class EditorSurface : Control
             {
                 if (col >= segStart && col < segEnd)
                 {
-                    int x = (col - segStart) * _charWidth + TextLeftPadding;
+                    int x = DisplayX(expanded, segStart, col) + TextLeftPadding;
                     TextRenderer.DrawText(g, "\u00B7", _editorFont,
                         new Point(x, y), wsColor, DrawFlags);
                 }
@@ -1322,7 +1351,7 @@ public sealed class EditorSurface : Control
             int textEndCol = col;
             if (textEndCol >= segStart && textEndCol < segEnd)
             {
-                int x = (textEndCol - segStart) * _charWidth + TextLeftPadding;
+                int x = DisplayX(expanded, segStart, textEndCol) + TextLeftPadding;
                 TextRenderer.DrawText(g, "\u00B6", _editorFont,
                     new Point(x, y), wsColor, DrawFlags);
             }
@@ -1358,7 +1387,8 @@ public sealed class EditorSurface : Control
 
     /// <summary>
     /// Converts a character index in the raw line text to the expanded
-    /// column position (accounting for tab stops).
+    /// column position (accounting for tab stops). Returns a character
+    /// index into the tab-expanded string.
     /// </summary>
     private int ExpandedColumn(string text, int charIndex)
     {
@@ -1586,11 +1616,11 @@ public sealed class EditorSurface : Control
 
         docLine = Math.Clamp(docLine, 0, _document.LineCount - 1);
 
-        int expandedCol = _charWidth > 0 ? (Math.Max(0, x - TextLeftPadding) / _charWidth) + hOffset : 0;
-
-        // Convert expanded column back to character index, accounting for tabs.
+        // Convert pixel x to character index, accounting for CJK display widths.
         string lineText = _document.GetLine(docLine);
-        int col = CompressedColumn(lineText, expandedCol);
+        string expanded = ExpandTabs(lineText);
+        int charIndex = CharIndexFromPixel(expanded, hOffset, Math.Max(0, x - TextLeftPadding));
+        int col = CompressedColumn(lineText, charIndex);
 
         return (docLine, col);
     }
@@ -1619,7 +1649,8 @@ public sealed class EditorSurface : Control
             if (targetRow < visualRow + renderedRows)
             {
                 int wrapRow = startRow + (targetRow - visualRow);
-                int expandedCol = wrapRow * wrapCols + (_charWidth > 0 ? Math.Max(0, x - TextLeftPadding) / _charWidth : 0);
+                int segStart = wrapRow * wrapCols;
+                int expandedCol = segStart + CharIndexFromPixel(lineText, segStart, Math.Max(0, x - TextLeftPadding));
                 expandedCol = Math.Min(expandedCol, lineLen);
                 int col = CompressedColumn(lineText, expandedCol);
                 return (docLine, col);
@@ -1658,7 +1689,25 @@ public sealed class EditorSurface : Control
 
         docLine = Math.Clamp(docLine, 0, _document.LineCount - 1);
 
-        int expandedCol = _charWidth > 0 ? (Math.Max(0, x - TextLeftPadding) / _charWidth) + hOffset : 0;
+        string lineText = _document.GetLine(docLine);
+        string expanded = ExpandTabs(lineText);
+        int pixelX = Math.Max(0, x - TextLeftPadding);
+
+        // Allow column positions past the end of text (needed for column/box selection).
+        int textEndPx = DisplayX(expanded, hOffset, expanded.Length);
+        int expandedCol;
+        if (hOffset >= expanded.Length)
+        {
+            expandedCol = hOffset + (pixelX + _charWidth / 2) / _charWidth;
+        }
+        else if (pixelX >= textEndPx)
+        {
+            expandedCol = expanded.Length + (pixelX - textEndPx + _charWidth / 2) / _charWidth;
+        }
+        else
+        {
+            expandedCol = CharIndexFromPixel(expanded, hOffset, pixelX);
+        }
 
         return (docLine, expandedCol);
     }
@@ -1692,6 +1741,71 @@ public sealed class EditorSurface : Control
         }
 
         return text.Length;
+    }
+
+    /// <summary>
+    /// Returns the pixel x-coordinate for a character position in the
+    /// tab-expanded string, accounting for fullwidth (CJK) characters.
+    /// <paramref name="from"/> and <paramref name="to"/> are character
+    /// indices into <paramref name="expanded"/>.
+    /// </summary>
+    private int DisplayX(string expanded, int from, int to)
+    {
+        int px = 0;
+        int end = Math.Min(to, expanded.Length);
+        for (int i = Math.Max(0, from); i < end; i++)
+        {
+            if (GetCharDisplayWidth(expanded[i]) > 1)
+                px += _cjkCharWidth;
+            else
+                px += _charWidth;
+        }
+        return px;
+    }
+
+    /// <summary>
+    /// Converts a pixel offset (relative to the start of visible text) to a
+    /// character index in the tab-expanded string. Walks from <paramref name="startChar"/>
+    /// summing character display widths until the pixel position is reached.
+    /// </summary>
+    private int CharIndexFromPixel(string expanded, int startChar, int pixelX)
+    {
+        int accumulated = 0;
+        for (int i = startChar; i < expanded.Length; i++)
+        {
+            int charPx = GetCharDisplayWidth(expanded[i]) > 1 ? _cjkCharWidth : _charWidth;
+            if (accumulated + charPx / 2 > pixelX)
+                return i;
+            accumulated += charPx;
+        }
+        return expanded.Length;
+    }
+
+    /// <summary>
+    /// Returns the display width of a character in monospace cells.
+    /// East Asian fullwidth and wide characters occupy 2 cells;
+    /// all others occupy 1 cell.
+    /// </summary>
+    internal static int GetCharDisplayWidth(char c)
+    {
+        // Fast path: ASCII and most Latin/Cyrillic/Greek characters.
+        if (c < 0x1100) return 1;
+
+        // East Asian Fullwidth and Wide character ranges.
+        // Based on Unicode East Asian Width property (UAX #11).
+        if (c >= 0x1100 && c <= 0x115F) return 2; // Hangul Jamo
+        if (c >= 0x2E80 && c <= 0x303E) return 2; // CJK Radicals, Kangxi, Ideographic, CJK Symbols
+        if (c >= 0x3041 && c <= 0x33BF) return 2; // Hiragana, Katakana, Bopomofo, Hangul Compat Jamo, Kanbun, CJK Strokes
+        if (c >= 0x3400 && c <= 0x4DBF) return 2; // CJK Unified Ideographs Extension A
+        if (c >= 0x4E00 && c <= 0x9FFF) return 2; // CJK Unified Ideographs
+        if (c >= 0xA000 && c <= 0xA4CF) return 2; // Yi Syllables and Radicals
+        if (c >= 0xAC00 && c <= 0xD7AF) return 2; // Hangul Syllables
+        if (c >= 0xF900 && c <= 0xFAFF) return 2; // CJK Compatibility Ideographs
+        if (c >= 0xFE30 && c <= 0xFE6F) return 2; // CJK Compatibility Forms, Small Form Variants
+        if (c >= 0xFF01 && c <= 0xFF60) return 2; // Fullwidth Latin, Halfwidth CJK punctuation
+        if (c >= 0xFFE0 && c <= 0xFFE6) return 2; // Fullwidth signs (¢, £, ¥, etc.)
+
+        return 1;
     }
 
     // ────────────────────────────────────────────────────────────────────

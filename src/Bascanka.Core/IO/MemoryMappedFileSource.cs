@@ -77,6 +77,11 @@ public sealed class MemoryMappedFileSource : ITextSource, IPrecomputedLineFeeds,
     public bool IsFullyScanned => _scannedChunks >= _chunkCount;
 
     /// <summary>
+    /// Approximate number of bytes scanned so far (chunks × chunk size, clamped to file size).
+    /// </summary>
+    public long ScannedBytes => Math.Min((long)_scannedChunks * ChunkCache.ChunkSizeBytes, FileSize);
+
+    /// <summary>
     /// Opens the specified file as a read-only memory-mapped file, detects its
     /// encoding, and prepares the chunk cache.
     /// </summary>

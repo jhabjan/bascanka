@@ -49,6 +49,7 @@ public sealed class EditorControl : UserControl
     private PieceTable _document;
     private bool _readOnly;
     private string? _filePath;
+    private long _fileSizeBytes;
 
     // ── Custom highlighting ─────────────────────────────────────────────
     private CustomHighlightMatcher? _customHighlightMatcher;
@@ -164,6 +165,11 @@ public sealed class EditorControl : UserControl
 
         // Create managers.
         _caretManager = new CaretManager { Document = _document };
+        _caretManager.ColumnToExpandedColumn = (docLine, col) =>
+        {
+            string text = _document.GetLine(docLine);
+            return ExpandedLength(text, Math.Min(col, text.Length));
+        };
         _selectionManager = new SelectionManager { Document = _document };
         _scrollManager = new ScrollManager();
         _foldingManager = new FoldingManager();
@@ -397,6 +403,13 @@ public sealed class EditorControl : UserControl
     /// <summary>The file path associated with this document, or null if untitled.</summary>
     public string? FilePath => _filePath;
 
+    /// <summary>The file size in bytes on disk. Updated on load/save.</summary>
+    public long FileSizeBytes
+    {
+        get => _fileSizeBytes;
+        set => _fileSizeBytes = value;
+    }
+
     /// <summary>The caret manager.</summary>
     public CaretManager CaretMgr => _caretManager;
 
@@ -603,6 +616,7 @@ public sealed class EditorControl : UserControl
     {
         ArgumentNullException.ThrowIfNull(path);
 
+        _fileSizeBytes = new FileInfo(path).Length;
         string text = File.ReadAllText(path);
         // Normalize line endings internally to \n.
         text = text.Replace("\r\n", "\n").Replace("\r", "\n");
@@ -637,6 +651,7 @@ public sealed class EditorControl : UserControl
         string content = _document.ToString();
         File.WriteAllText(path, content);
         _filePath = path;
+        _fileSizeBytes = new FileInfo(path).Length;
         _commandHistory.SetSavePoint();
     }
 
@@ -1902,6 +1917,43 @@ public sealed class EditorControl : UserControl
                 (changeLine, _) = _document.OffsetToLineColumn(e.Offset);
             }
             _tokenCache.Invalidate(changeLine, _document.LineCount - changeLine);
+        }
+
+        // Update live byte-size estimate.
+        RecalcFileSizeBytes();
+    }
+
+    private void RecalcFileSizeBytes()
+    {
+        var encoding = _encodingManager?.CurrentEncoding
+            ?? new System.Text.UTF8Encoding(false);
+
+        long charCount = _document.Length;
+
+        // Account for line ending expansion (\n → \r\n adds one byte per break).
+        if (_lineEnding == "CRLF" && _document.LineCount > 1)
+            charCount += _document.LineCount - 1;
+
+        if (encoding is System.Text.UnicodeEncoding)
+            _fileSizeBytes = charCount * 2 + (_encodingManager?.HasBom == true ? 2 : 0);
+        else if (encoding is System.Text.UTF32Encoding)
+            _fileSizeBytes = charCount * 4 + (_encodingManager?.HasBom == true ? 4 : 0);
+        else if (encoding.IsSingleByte)
+            _fileSizeBytes = charCount + (_encodingManager?.HasBom == true ? encoding.GetPreamble().Length : 0);
+        else
+        {
+            // UTF-8 or other variable-width: compute from text for small files.
+            if (_document.Length <= 5_000_000)
+            {
+                string text = _document.ToString();
+                if (_lineEnding == "CRLF")
+                    text = text.Replace("\n", "\r\n");
+                else if (_lineEnding == "CR")
+                    text = text.Replace("\n", "\r");
+                _fileSizeBytes = encoding.GetByteCount(text)
+                    + (_encodingManager?.HasBom == true ? encoding.GetPreamble().Length : 0);
+            }
+            // else: keep the last known value (from disk load/save).
         }
     }
 

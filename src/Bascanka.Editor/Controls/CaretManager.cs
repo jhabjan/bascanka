@@ -43,6 +43,13 @@ public sealed class CaretManager : IDisposable
     /// </summary>
     public Func<long, long, long>? LineColumnToVisibleRow { get; set; }
 
+    /// <summary>
+    /// Maps (docLine, charColumn) to the expanded visual column, accounting
+    /// for tabs and fullwidth (CJK) characters. Used by <see cref="EnsureVisible"/>
+    /// for correct horizontal scrolling.
+    /// </summary>
+    public Func<long, int, int>? ColumnToExpandedColumn { get; set; }
+
     /// <summary>The document buffer used for position calculations.</summary>
     public PieceTable? Document
     {
@@ -368,13 +375,19 @@ public sealed class CaretManager : IDisposable
         // Horizontal (no horizontal scroll when word-wrap is on)
         if (LineColumnToVisibleRow is null)
         {
-            if (_column < scroll.HorizontalScrollOffset)
+            // Use expanded column (accounts for tabs and fullwidth chars)
+            // so horizontal scroll aligns with the actual pixel position.
+            long expandedCol = ColumnToExpandedColumn is not null
+                ? ColumnToExpandedColumn(_line, (int)_column)
+                : _column;
+
+            if (expandedCol < scroll.HorizontalScrollOffset)
             {
-                scroll.HorizontalScrollOffset = (int)Math.Max(0, _column - EditorControl.DefaultCaretScrollBuffer);
+                scroll.HorizontalScrollOffset = (int)Math.Max(0, expandedCol - EditorControl.DefaultCaretScrollBuffer);
             }
-            else if (_column >= scroll.HorizontalScrollOffset + visibleColumns)
+            else if (expandedCol >= scroll.HorizontalScrollOffset + visibleColumns)
             {
-                scroll.HorizontalScrollOffset = (int)(_column - visibleColumns + EditorControl.DefaultCaretScrollBuffer);
+                scroll.HorizontalScrollOffset = (int)(expandedCol - visibleColumns + EditorControl.DefaultCaretScrollBuffer);
             }
         }
     }

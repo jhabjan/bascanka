@@ -156,8 +156,8 @@ public sealed class StatusBarManager
                 : Strings.PlainText;
         }
 
-        // File size.
-        long length = editor.GetBufferLength();
+        // File size (bytes on disk).
+        long length = editor.FileSizeBytes;
         _fileSizeLabel.Text = FormatFileSize(length);
 
         // Zoom level.
