@@ -25,6 +25,7 @@
     <EmbeddedResource Include="Resources\bascanka.ico" />
     <EmbeddedResource Include="Resources\bascanka_logo.png" />
     <EmbeddedResource Include="Resources\bascanska_ploca.jpg" />
+    <EmbeddedResource Include="Resources\lang_zh.json" />
     <EmbeddedResource Include="Resources\lang_en.json" />
     <EmbeddedResource Include="Resources\lang_hr.json" />
     <EmbeddedResource Include="Resources\lang_sr.json" />

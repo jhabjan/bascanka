@@ -10,7 +10,7 @@ namespace Bascanka.App;
 /// </summary>
 internal static class LocalizationManager
 {
-    private static readonly string[] EmbeddedLanguages = ["en", "hr", "sr"];
+    private static readonly string[] EmbeddedLanguages = ["en", "hr", "sr","zh"];
 
     private static Dictionary<string, string> _active = new();
     private static Dictionary<string, string> _fallback = new(); // always English
