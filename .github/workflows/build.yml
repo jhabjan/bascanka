@@ -59,13 +59,13 @@ jobs:
           Compress-Archive -Path publish_sc/* -DestinationPath ${{ steps.artifact_name.outputs.basename }}.bin.sc.zip
 
       - name: Upload Framework-dependent Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Bascanka_Framework_Dependent
           path: ${{ steps.artifact_name.outputs.basename }}.bin.zip
 
       - name: Upload Self-contained Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Bascanka_Self_Contained
           path: ${{ steps.artifact_name.outputs.basename }}.bin.sc.zip
@@ -78,12 +78,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Download Framework-dependent Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Bascanka_Framework_Dependent
           path: .
       - name: Download Self-contained Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Bascanka_Self_Contained
           path: .
