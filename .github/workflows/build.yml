@@ -1,0 +1,76 @@
+name: Build & Release Bascanka
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.0.2)'
+        required: true
+        default: 'v1.0.1'
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "::set-output name=version::${{ github.event.inputs.version }}"
+          else
+            echo "::set-output name=version::${GITHUB_REF#refs/tags/}"
+          fi
+        shell: bash
+
+      - name: Restore dependencies
+        run: dotnet restore src/Bascanka.App/Bascanka.App.csproj
+
+      - name: Build Framework-dependent
+        run: |
+          dotnet publish src/Bascanka.App/Bascanka.App.csproj -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=false -o publish_fd
+
+      - name: Build Self-contained
+        run: |
+          dotnet publish src/Bascanka.App/Bascanka.App.csproj -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=true -o publish_sc
+
+      - name: Zip Framework-dependent
+        run: |
+          Compress-Archive -Path publish_fd/* -DestinationPath Bascanka.${{ steps.get_version.outputs.version }}.bin.zip
+
+      - name: Zip Self-contained
+        run: |
+          Compress-Archive -Path publish_sc/* -DestinationPath Bascanka.${{ steps.get_version.outputs.version }}.bin.sc.zip
+
+      - name: Upload Framework-dependent Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Bascanka_Framework_Dependent
+          path: Bascanka.${{ steps.get_version.outputs.version }}.bin.zip
+
+      - name: Upload Self-contained Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Bascanka_Self_Contained
+          path: Bascanka.${{ steps.get_version.outputs.version }}.bin.sc.zip
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Bascanka ${{ steps.get_version.outputs.version }}
+          files: |
+            Bascanka.${{ steps.get_version.outputs.version }}.bin.zip
+            Bascanka.${{ steps.get_version.outputs.version }}.bin.sc.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
