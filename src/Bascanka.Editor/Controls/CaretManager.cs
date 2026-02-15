@@ -124,18 +124,26 @@ public sealed class CaretManager : IDisposable
     //  Relative movement
     // ────────────────────────────────────────────────────────────────────
 
-    /// <summary>Moves the caret one character to the left.</summary>
+    /// <summary>Moves the caret one character to the left, skipping over surrogate pairs.</summary>
     public void MoveLeft()
     {
         if (_document is null || _offset == 0) return;
-        MoveTo(_offset - 1);
+        long newOffset = _offset - 1;
+        // If we landed on a low surrogate, skip back one more to pass the high surrogate.
+        if (newOffset > 0 && char.IsLowSurrogate(_document.GetCharAt(newOffset)))
+            newOffset--;
+        MoveTo(newOffset);
     }
 
-    /// <summary>Moves the caret one character to the right.</summary>
+    /// <summary>Moves the caret one character to the right, skipping over surrogate pairs.</summary>
     public void MoveRight()
     {
         if (_document is null || _offset >= _document.Length) return;
-        MoveTo(_offset + 1);
+        long newOffset = _offset + 1;
+        // If we were on a high surrogate, skip the low surrogate too.
+        if (char.IsHighSurrogate(_document.GetCharAt(_offset)) && newOffset < _document.Length)
+            newOffset++;
+        MoveTo(newOffset);
     }
 
     /// <summary>Moves the caret one line up, preserving the desired column.</summary>

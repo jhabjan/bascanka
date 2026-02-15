@@ -1,0 +1,30 @@
+﻿v.1.0.2.		2026-02-15
+--------------------------
+- added CJK / Unicode Character Support - Fixed cursor positioning for CJK (Chinese, Japanese, Korean) and other fullwidth characters. The caret, selection highlights, search highlights, and all   other visual elements now align correctly with double-width characters.
+- added GB2312 encoding and support for detecting GB2312 when opening files.
+- added the ability to compare opened tabs text via the tab right-click context menu.
+- added a per-tab progress bar when saving large files, allowing users to continue working on other tabs while a file is being saved.
+- added system theme detection feature.
+- added Chinese UI localization.
+- added Serbian (Cyrillic) UI localization.
+- fixed arrow key navigation to skip over surrogate pairs as a single unit instead of requiring two key presses per supplementary character.
+- fixed box/column selection losing column mode when starting with Delete or Backspace, so it now stays in column mode for continued editing.
+- fixed performance issue when editing large files and jumping + making changes between beginning and end of the file.
+- extended the About window to include contributors and release notes.
+
+v.1.0.1.		2026-02-14
+--------------------------
+- added Side-by-side file comparison. Available from Tools > Compare Files.
+- added Sed Transform / Unix sed-style substitution with live preview. Available from Tools > Sed Transform.
+- added Custom Highlighting + Folding / User-defined regex-based highlighting + folding profiles.
+- added COBOL Lexer / language support.
+- added persistence for window position, size, maximized state and opened tabs.
+- extended to be fully customizable via Tools > Settings (theme colors, fonts, text rendering engine limits, etc).
+- introduced a --reset (-r) command-line parameter for bascanka.exe, allowing users to clear the session state and start with a fresh instance.
+- other small bug fixes.
+
+v.1.0.0.		2026-02-12
+--------------------------
+- initial release.
+- supports syntax highlighting for 18 languages/scripts.
+- supports large file editing (10 GB+).

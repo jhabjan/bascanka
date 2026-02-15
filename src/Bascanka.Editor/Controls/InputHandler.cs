@@ -961,7 +961,11 @@ public sealed class InputHandler
         long caretCharCol = SelectionManager.CompressedColumnAt(
             _document.GetLine(startLine), leftExpCol, _tabSize);
         _caret.MoveToLineColumn(startLine, caretCharCol);
-        _selection.ClearSelection();
+
+        // Stay in column mode with a zero-width selection at the left edge
+        // so the user can continue typing/deleting in column mode.
+        _selection.StartColumnSelection(startLine, leftExpCol);
+        _selection.ExtendColumnSelection(endLine, leftExpCol);
         TextModified?.Invoke();
     }
 

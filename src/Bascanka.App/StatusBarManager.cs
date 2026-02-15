@@ -433,7 +433,7 @@ public sealed class StatusBarManager
         };
     }
 
-    private static string FormatFileSize(long bytes)
+    internal static string FormatFileSize(long bytes)
     {
         const long KB = 1024;
         const long MB = KB * 1024;

@@ -105,9 +105,25 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         MinimumSize = new Size(640, 480);
-        ClientSize = new Size(740, 560);
+
+        // Restore saved size or use a larger default.
+        int savedW = SettingsManager.GetInt(SettingsManager.KeySettingsWidth, 860);
+        int savedH = SettingsManager.GetInt(SettingsManager.KeySettingsHeight, 640);
+        ClientSize = new Size(Math.Max(savedW, MinimumSize.Width),
+                              Math.Max(savedH, MinimumSize.Height));
+
         BackColor = _theme.EditorBackground;
         ForeColor = _theme.EditorForeground;
+
+        // Persist size on close.
+        FormClosing += (_, _) =>
+        {
+            if (WindowState == FormWindowState.Normal)
+            {
+                SettingsManager.SetInt(SettingsManager.KeySettingsWidth, ClientSize.Width);
+                SettingsManager.SetInt(SettingsManager.KeySettingsHeight, ClientSize.Height);
+            }
+        };
 
         // ── Category list (left) ────────────────────────────────────
         _categoryList = new ListBox

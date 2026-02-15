@@ -36,7 +36,7 @@ internal sealed class SedInputDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(560, 440);
+        Size = new Size(560, 480);
         ShowInTaskbar = false;
 
         int leftMargin = 20;

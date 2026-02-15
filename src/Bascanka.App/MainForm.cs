@@ -160,6 +160,7 @@ public sealed class MainForm : Form
         _tabStrip.TabSelected += OnTabSelected;
         _tabStrip.TabClosed += OnTabCloseRequested;
         _tabStrip.TabsReordered += OnTabsReordered;
+        _tabStrip.TabContextMenuOpening += OnTabContextMenuOpening;
 
         // ── Add controls in correct Z-order ──────────────────────────
         Controls.Add(_verticalSplit);
@@ -1254,21 +1255,34 @@ public sealed class MainForm : Form
                         ? source
                         : new BorrowedTextSource(source);
 
-                    tab.Editor.Document = new PieceTable(textSource);
+                    // Suppress painting during document swap to avoid blinking.
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                    try
+                    {
+                        tab.Editor.Document = new PieceTable(textSource);
+
+                        // Restore caret BEFORE scroll so that the scroll position
+                        // the user is actually looking at wins over EnsureVisible.
+                        long docLen = tab.Editor.Document.Length;
+                        if (hadSelection && savedSelStart < docLen)
+                        {
+                            long clampedEnd = Math.Min(savedSelEnd, docLen);
+                            tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
+                        }
+                        else if (savedCaret > 0 && savedCaret <= docLen)
+                        {
+                            tab.Editor.CaretOffset = savedCaret;
+                        }
+
+                        tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
+                    }
+                    finally
+                    {
+                        SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                        tab.Editor.Invalidate(true);
+                    }
+
                     tab.Editor.FileSizeBytes = source.ScannedBytes;
-                    tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
-
-                    long docLen = tab.Editor.Document.Length;
-                    if (hadSelection && savedSelStart < docLen)
-                    {
-                        long clampedEnd = Math.Min(savedSelEnd, docLen);
-                        tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
-                    }
-                    else if (savedCaret > 0 && savedCaret <= docLen)
-                    {
-                        tab.Editor.CaretOffset = savedCaret;
-                    }
-
                     UpdateStatusBar();
 
                     if (!done)
@@ -1279,6 +1293,7 @@ public sealed class MainForm : Form
                 tab.Editor.EncodingManager = new EncodingManager(source.Encoding,
                     source.Encoding.GetPreamble().Length > 0);
                 tab.Editor.LineEnding = source.DetectedLineEnding;
+                tab.Editor.IsMemoryMappedDocument = true;
                 tab.Editor.IsReadOnly = false;
                 tab.IsModified = false;
                 RefreshTabDisplay(tab);
@@ -1405,6 +1420,7 @@ public sealed class MainForm : Form
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+    private const int WM_SETREDRAW = 0x000B;
     private const int WM_CUT   = 0x0300;
     private const int WM_COPY  = 0x0301;
     private const int WM_PASTE = 0x0302;
@@ -1772,6 +1788,93 @@ public sealed class MainForm : Form
         AddTab(tab);
     }
 
+    // ── Tab context menu: Compare with ──────────────────────────────
+
+    private void OnTabContextMenuOpening(object? sender, TabContextMenuOpeningEventArgs e)
+    {
+        var menu = e.Menu;
+        int sourceIndex = e.Index;
+        if (sourceIndex < 0 || sourceIndex >= _tabs.Count) return;
+
+        var sourceTab = _tabs[sourceIndex];
+
+        // Build "Compare with..." submenu.
+        var compareMenu = new ToolStripMenuItem(Strings.CompareWithTab);
+
+        // Add an entry for each other open tab.
+        for (int i = 0; i < _tabs.Count; i++)
+        {
+            if (i == sourceIndex) continue;
+            var otherTab = _tabs[i];
+            // Skip diff/sed preview tabs (they have no real editor text).
+            if (otherTab.Tag is DiffViewControl or SedPreviewControl) continue;
+
+            string itemText = otherTab.DisplayTitle ?? otherTab.Title;
+            int otherIndex = i;
+            var item = new ToolStripMenuItem(itemText);
+            item.Click += (_, _) => CompareTabWith(sourceTab, _tabs[otherIndex]);
+            compareMenu.DropDownItems.Add(item);
+        }
+
+        // Separator + Browse option (compare with file on disk).
+        if (compareMenu.DropDownItems.Count > 0)
+            compareMenu.DropDownItems.Add(new ToolStripSeparator());
+
+        var browseItem = new ToolStripMenuItem(Strings.CompareWithBrowse);
+        browseItem.Click += (_, _) => CompareTabWithFile(sourceTab);
+        compareMenu.DropDownItems.Add(browseItem);
+
+        // Insert before the last separator in the context menu (before Copy Path).
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(compareMenu);
+    }
+
+    private void CompareTabWith(TabInfo sourceTab, TabInfo otherTab)
+    {
+        string text1 = sourceTab.Editor.GetAllText();
+        string text2 = otherTab.Editor.GetAllText();
+        string name1 = sourceTab.DisplayTitle ?? sourceTab.Title;
+        string name2 = otherTab.DisplayTitle ?? otherTab.Title;
+
+        var result = DiffEngine.Compare(text1, text2, name1, name2);
+
+        if (result.DiffCount == 0)
+        {
+            MessageBox.Show(this, Strings.DiffNoDifferences, Strings.AppTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        OpenDiffTab(result, $"{name1} \u2194 {name2}");
+    }
+
+    private void CompareTabWithFile(TabInfo sourceTab)
+    {
+        string filter = $"{Strings.FilterAllFiles} (*.*)|*.*";
+        using var dlg = new OpenFileDialog
+        {
+            Title = Strings.CompareSelectSecondFile,
+            Filter = filter,
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        string text1 = sourceTab.Editor.GetAllText();
+        string text2 = File.ReadAllText(dlg.FileName);
+        string name1 = sourceTab.DisplayTitle ?? sourceTab.Title;
+        string name2 = Path.GetFileName(dlg.FileName);
+
+        var result = DiffEngine.Compare(text1, text2, name1, name2);
+
+        if (result.DiffCount == 0)
+        {
+            MessageBox.Show(this, Strings.DiffNoDifferences, Strings.AppTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        OpenDiffTab(result, $"{name1} \u2194 {name2}");
+    }
+
     // ── Sed transform ──────────────────────────────────────────────
 
     public void SedTransform()
@@ -1930,27 +2033,23 @@ public sealed class MainForm : Form
     {
         if (tab.FilePath is null) return;
 
+        if (tab.Editor.IsMemoryMappedDocument)
+        {
+            SaveMemoryMappedDocument(tab);
+            return;
+        }
+
         try
         {
             _fileWatcher.SuppressNextChange(tab.FilePath);
 
-            string text = tab.Editor.GetAllText();
-
-            // Normalize to \n first (defensive), then convert to target ending.
-            if (text.Contains('\r'))
-                text = text.Replace("\r\n", "\n").Replace("\r", "\n");
-
-            string le = tab.Editor.LineEnding;
-            if (le == "CRLF")
-                text = text.Replace("\n", "\r\n");
-            else if (le == "CR")
-                text = text.Replace("\n", "\r");
-
             Encoding encoding = tab.Editor.EncodingManager?.CurrentEncoding
                 ?? new UTF8Encoding(false);
             bool hasBom = tab.Editor.EncodingManager?.HasBom ?? false;
+            string le = tab.Editor.LineEnding;
 
-            using var fs = new FileStream(tab.FilePath, FileMode.Create, FileAccess.Write);
+            using var fs = new FileStream(tab.FilePath, FileMode.Create, FileAccess.Write,
+                FileShare.None, bufferSize: 65536);
 
             if (hasBom)
             {
@@ -1959,8 +2058,7 @@ public sealed class MainForm : Form
                     fs.Write(bom, 0, bom.Length);
             }
 
-            byte[] bytes = encoding.GetBytes(text);
-            fs.Write(bytes, 0, bytes.Length);
+            WriteDocumentChunked(tab.Editor.Document, fs, encoding, le);
 
             tab.Editor.FileSizeBytes = fs.Length;
             tab.IsModified = false;
@@ -1978,6 +2076,331 @@ public sealed class MainForm : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
+    }
+
+    /// <summary>
+    /// Saves an MMF-backed document by writing to a temp file, releasing the
+    /// memory-mapped lock, swapping files, and reloading asynchronously.
+    /// Shows a progress dialog during the write and reload phases.
+    /// </summary>
+    private async void SaveMemoryMappedDocument(TabInfo tab)
+    {
+        if (tab.FilePath is null) return;
+
+        string tmpPath = tab.FilePath + ".saving.tmp";
+
+        // Build a semi-transparent overlay Form positioned over the editor.
+        var theme = ThemeManager.Instance.CurrentTheme;
+        var (overlayForm, dialogForm, progressLabel, progressBar) = CreateEditorOverlay(tab.Editor, theme);
+
+        try
+        {
+            Encoding encoding = tab.Editor.EncodingManager?.CurrentEncoding
+                ?? new UTF8Encoding(false);
+            bool hasBom = tab.Editor.EncodingManager?.HasBom ?? false;
+            string le = tab.Editor.LineEnding;
+
+            // Prevent editing during save.
+            tab.Editor.IsReadOnly = true;
+
+            // Capture PieceTable reference for background-thread reads.
+            PieceTable document = tab.Editor.Document;
+            long docLength = document.Length;
+
+            // 1. Write to temp file on background thread with progress.
+            var progress = new Progress<long>(written =>
+            {
+                if (docLength <= 0) return;
+                int permille = (int)(written * 1000 / docLength);
+                progressBar.Value = Math.Min(permille, 1000);
+                string writtenStr = StatusBarManager.FormatFileSize(written);
+                string totalStr = StatusBarManager.FormatFileSize(docLength);
+                progressLabel.Text = string.Format(Strings.SavingProgressFormat,
+                    writtenStr, totalStr);
+            });
+
+            await Task.Run(() =>
+            {
+                using var fs = new FileStream(tmpPath, FileMode.Create, FileAccess.Write,
+                    FileShare.None, bufferSize: 65536);
+
+                if (hasBom)
+                {
+                    byte[] bom = encoding.GetPreamble();
+                    if (bom.Length > 0)
+                        fs.Write(bom, 0, bom.Length);
+                }
+
+                WriteDocumentChunked(document, fs, encoding, le, progress);
+            });
+
+            // 2. Save editor state before disposing the document.
+            long savedScroll = tab.Editor.ScrollMgr.FirstVisibleLine;
+            long savedCaret = tab.Editor.CaretOffset;
+
+            // 3. Release the MMF by replacing the document with an empty one.
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+            tab.Editor.Document = new PieceTable(string.Empty);
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+
+            // 4. Now the original file is unlocked — suppress watcher and swap.
+            _fileWatcher.SuppressNextChange(tab.FilePath);
+            File.Move(tmpPath, tab.FilePath, overwrite: true);
+
+            // 5. Reload asynchronously from the saved file (new MMF).
+            long fileSize = new FileInfo(tab.FilePath).Length;
+            progressLabel.Text = Strings.ReloadingAfterSave;
+            progressBar.Value = 0;
+
+            var source = await Task.Run(() =>
+                new MemoryMappedFileSource(tab.FilePath, normalizeLineEndings: true, deferScan: true));
+
+            const int FirstBatchChunks = 128;
+            const int SubsequentBatchChunks = 2048;
+            int batchSize = FirstBatchChunks;
+            bool done = false;
+
+            // Keep painting suppressed for the entire reload — the overlay
+            // shows progress and prevents interaction.  A single repaint
+            // happens after the overlay is removed.
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+
+            while (!done)
+            {
+                done = await Task.Run(() => source.ScanNextBatch(batchSize));
+
+                if (!_tabs.Contains(tab))
+                {
+                    source.Dispose();
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                    CloseEditorOverlay(overlayForm, dialogForm);
+                    return;
+                }
+
+                ITextSource textSource = done
+                    ? source
+                    : new BorrowedTextSource(source);
+
+                tab.Editor.Document = new PieceTable(textSource);
+
+                tab.Editor.FileSizeBytes = source.ScannedBytes;
+
+                if (fileSize > 0)
+                {
+                    int permille = (int)(source.ScannedBytes * 1000 / fileSize);
+                    progressBar.Value = Math.Min(permille, 1000);
+                    string scannedStr = StatusBarManager.FormatFileSize(source.ScannedBytes);
+                    string totalStr = StatusBarManager.FormatFileSize(fileSize);
+                    progressLabel.Text = string.Format(Strings.ReloadingProgressFormat,
+                        scannedStr, totalStr);
+                }
+
+                UpdateStatusBar();
+
+                if (!done)
+                    batchSize = SubsequentBatchChunks;
+            }
+
+            // Resume painting and remove the overlay.
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            CloseEditorOverlay(overlayForm, dialogForm);
+
+            // 6. Restore state.
+            tab.Editor.FileSizeBytes = fileSize;
+            tab.Editor.EncodingManager = new EncodingManager(encoding, hasBom);
+            tab.Editor.LineEnding = le;
+            tab.Editor.IsMemoryMappedDocument = true;
+            tab.Editor.IsReadOnly = false;
+
+            long docLen = tab.Editor.Document.Length;
+            if (savedCaret > 0 && savedCaret <= docLen)
+                tab.Editor.CaretOffset = savedCaret;
+            tab.Editor.ScrollMgr.ScrollToLine(Math.Min(savedScroll, docLen));
+
+            tab.Editor.Invalidate(true);
+
+            tab.IsModified = false;
+            RefreshTabDisplay(tab);
+            UpdateTitleBar();
+            UpdateStatusBar();
+
+            _pluginHost.RaiseDocumentSaved(tab.FilePath);
+        }
+        catch (Exception ex)
+        {
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            CloseEditorOverlay(overlayForm, dialogForm);
+
+            if (File.Exists(tmpPath))
+            {
+                try { File.Delete(tmpPath); } catch { /* best effort */ }
+            }
+
+            tab.Editor.IsReadOnly = false;
+            tab.Editor.Invalidate(true);
+
+            MessageBox.Show(
+                string.Format(Strings.ErrorSavingFile, tab.FilePath, ex.Message),
+                Strings.AppTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// Writes a <see cref="PieceTable"/> to a stream in 1 MB chunks with line
+    /// ending conversion.  Safe to call from a background thread when no
+    /// concurrent writes are happening to the document.
+    /// </summary>
+    private static void WriteDocumentChunked(PieceTable document, FileStream fs,
+        Encoding encoding, string lineEnding, IProgress<long>? progress = null)
+    {
+        const int ChunkSize = 1024 * 1024;
+        long docLength = document.Length;
+        long offset = 0;
+
+        while (offset < docLength)
+        {
+            long remaining = docLength - offset;
+            int take = (int)Math.Min(remaining, ChunkSize);
+
+            string chunk = document.GetText(offset, take);
+
+            if (chunk.Contains('\r'))
+                chunk = chunk.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            if (lineEnding == "CRLF")
+                chunk = chunk.Replace("\n", "\r\n");
+            else if (lineEnding == "CR")
+                chunk = chunk.Replace("\n", "\r");
+
+            byte[] bytes = encoding.GetBytes(chunk);
+            fs.Write(bytes, 0, bytes.Length);
+
+            offset += take;
+            progress?.Report(offset);
+        }
+    }
+
+    /// <summary>
+    /// Creates two Forms over the editor: a semi-transparent overlay for the
+    /// dimming effect, and a small opaque dialog with themed progress controls.
+    /// The overlay uses <see cref="Form.Opacity"/> so the text behind it stays
+    /// visible.  Only this editor is blocked — other tabs remain interactive.
+    /// </summary>
+    private (Form Overlay, Form Dialog, Label Label, ProgressBar Bar) CreateEditorOverlay(
+        EditorControl editor, Bascanka.Editor.Themes.ITheme theme)
+    {
+        var screenBounds = editor.RectangleToScreen(editor.ClientRectangle);
+
+        // Semi-transparent layer that dims the editor text.
+        var overlay = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            BackColor = Color.Black,
+            Opacity = 0.35,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = screenBounds.Location,
+            ClientSize = screenBounds.Size,
+        };
+
+        // Small opaque dialog with progress controls, themed background.
+        const int dlgWidth = 440;
+        const int dlgHeight = 70;
+        int pad = 10;
+
+        // Border color: blend foreground toward background for a subtle edge.
+        Color borderColor = Color.FromArgb(
+            (theme.EditorForeground.R + theme.EditorBackground.R) / 2,
+            (theme.EditorForeground.G + theme.EditorBackground.G) / 2,
+            (theme.EditorForeground.B + theme.EditorBackground.B) / 2);
+
+        var dialog = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            ClientSize = new Size(dlgWidth, dlgHeight),
+            BackColor = theme.EditorBackground,
+        };
+
+        // Draw a 1px border around the dialog.
+        dialog.Paint += (_, e) =>
+        {
+            using var pen = new Pen(borderColor);
+            e.Graphics.DrawRectangle(pen, 0, 0,
+                dialog.ClientSize.Width - 1, dialog.ClientSize.Height - 1);
+        };
+
+        var label = new Label
+        {
+            Text = string.Format(Strings.SavingProgressFormat, "0 B", "0 B"),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(pad, 4),
+            Size = new Size(dlgWidth - pad * 2, 25),
+            BackColor = theme.EditorBackground,
+            ForeColor = theme.EditorForeground,
+        };
+
+        var bar = new ProgressBar
+        {
+            Style = ProgressBarStyle.Continuous,
+            Minimum = 0,
+            Maximum = 1000,
+            Location = new Point(pad, 32),
+            Size = new Size(dlgWidth - pad * 2, 28),
+        };
+
+        dialog.Controls.Add(label);
+        dialog.Controls.Add(bar);
+
+        // Center the dialog on the overlay / editor area.
+        void centerDialog()
+        {
+            if (overlay.IsDisposed) return;
+            dialog.Location = new Point(
+                overlay.Left + (overlay.Width - dlgWidth) / 2,
+                overlay.Top + (overlay.Height - dlgHeight) / 2);
+        }
+
+        // Follow editor position/size changes.
+        void syncPosition(object? s, EventArgs e)
+        {
+            if (!editor.IsHandleCreated || overlay.IsDisposed) return;
+            var bounds = editor.RectangleToScreen(editor.ClientRectangle);
+            overlay.Location = bounds.Location;
+            overlay.ClientSize = bounds.Size;
+            centerDialog();
+        }
+        editor.SizeChanged += syncPosition;
+        editor.LocationChanged += syncPosition;
+
+        // Also follow main form move/resize.
+        this.LocationChanged += syncPosition;
+
+        // Hide both forms when this tab is not visible; show when it is.
+        editor.VisibleChanged += (_, _) =>
+        {
+            if (!overlay.IsDisposed) overlay.Visible = editor.Visible;
+            if (!dialog.IsDisposed) dialog.Visible = editor.Visible;
+        };
+
+        overlay.Show(this);
+        centerDialog();
+        dialog.Show(this);
+
+        return (overlay, dialog, label, bar);
+    }
+
+    /// <summary>
+    /// Closes and disposes both overlay and dialog Forms.
+    /// </summary>
+    private static void CloseEditorOverlay(Form overlay, Form dialog)
+    {
+        if (!dialog.IsDisposed) { dialog.Close(); dialog.Dispose(); }
+        if (!overlay.IsDisposed) { overlay.Close(); overlay.Dispose(); }
     }
 
     private void WireEditorEvents(EditorControl editor)
@@ -2638,29 +3061,38 @@ public sealed class MainForm : Form
                 long savedSelStart = selMgr.SelectionStart;
                 long savedSelEnd = selMgr.SelectionEnd;
 
-                // Intermediate swaps use a non-owning wrapper so disposing
-                // the old PieceTable won't release the shared MMF source.
-                // The final swap gives ownership to the PieceTable.
                 ITextSource textSource = done
                     ? source
                     : new BorrowedTextSource(source);
 
-                tab.Editor.Document = new PieceTable(textSource);
+                // Suppress painting during document swap to avoid blinking.
+                SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                try
+                {
+                    tab.Editor.Document = new PieceTable(textSource);
+
+                    // Restore caret BEFORE scroll so that the scroll position
+                    // the user is actually looking at wins over EnsureVisible.
+                    long docLen = tab.Editor.Document.Length;
+                    if (hadSelection && savedSelStart < docLen)
+                    {
+                        long clampedEnd = Math.Min(savedSelEnd, docLen);
+                        tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
+                    }
+                    else if (savedCaret > 0 && savedCaret <= docLen)
+                    {
+                        tab.Editor.CaretOffset = savedCaret;
+                    }
+
+                    tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
+                }
+                finally
+                {
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                    tab.Editor.Invalidate(true);
+                }
+
                 tab.Editor.FileSizeBytes = source.ScannedBytes;
-                tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
-
-                // Restore caret and selection if still within bounds.
-                long docLen = tab.Editor.Document.Length;
-                if (hadSelection && savedSelStart < docLen)
-                {
-                    long clampedEnd = Math.Min(savedSelEnd, docLen);
-                    tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
-                }
-                else if (savedCaret > 0 && savedCaret <= docLen)
-                {
-                    tab.Editor.CaretOffset = savedCaret;
-                }
-
                 UpdateStatusBar();
 
                 if (!done)
@@ -2672,6 +3104,7 @@ public sealed class MainForm : Form
             tab.Editor.EncodingManager = new EncodingManager(source.Encoding,
                 source.Encoding.GetPreamble().Length > 0);
             tab.Editor.LineEnding = source.DetectedLineEnding;
+            tab.Editor.IsMemoryMappedDocument = true;
             tab.Editor.IsReadOnly = false;
 
             if (lexer is not null)

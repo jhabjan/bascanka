@@ -125,6 +125,10 @@
 
     "CommandPaletteNotYetImplemented": "命令面板将在未来版本中可用。",
 
+    "SavingProgressFormat": "保存中\u2026 {0} / {1}",
+    "ReloadingAfterSave": "重新加载文件\u2026",
+    "ReloadingProgressFormat": "重新加载中\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "缩放: {0}%",
 
     "SettingsTitle": "设置",

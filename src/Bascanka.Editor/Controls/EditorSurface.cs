@@ -33,6 +33,7 @@ public sealed class EditorSurface : Control
     // Calculated font metrics.
     private int _charWidth;
     private int _cjkCharWidth;
+    private int _suppCjkCharWidth; // supplementary plane CJK (Extension B+)
     private int _lineHeight;
 
     // References to collaborating managers.
@@ -331,6 +332,12 @@ public sealed class EditorSurface : Control
         Size cjkSize = TextRenderer.MeasureText(g, "\u4E2D", _editorFont, Size.Empty,
             TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         _cjkCharWidth = Math.Max(_charWidth, cjkSize.Width);
+
+        // Measure supplementary-plane CJK (Extension B) — may use a different
+        // fallback font (e.g. SimSun-ExtB) with different metrics.
+        Size suppCjkSize = TextRenderer.MeasureText(g, "\U00020BB7", _editorFont, Size.Empty,
+            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        _suppCjkCharWidth = Math.Max(_charWidth, suppCjkSize.Width);
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -1276,8 +1283,12 @@ public sealed class EditorSurface : Control
             }
             else
             {
-                col++;
-                dispPx += GetCharDisplayWidth(c) > 1 ? _cjkCharWidth : _charWidth;
+                int w = GetCharDisplayWidth(lineText, i);
+                if (w > 0) // skip low surrogates (w == 0)
+                {
+                    col++;
+                    dispPx += CharPixelWidth(lineText, i, w);
+                }
             }
         }
 
@@ -1338,7 +1349,9 @@ public sealed class EditorSurface : Control
             }
             else
             {
-                col++;
+                int w = GetCharDisplayWidth(lineText, i);
+                if (w > 0) // skip low surrogates
+                    col++;
             }
 
             if (col >= segEnd) break;
@@ -1755,10 +1768,9 @@ public sealed class EditorSurface : Control
         int end = Math.Min(to, expanded.Length);
         for (int i = Math.Max(0, from); i < end; i++)
         {
-            if (GetCharDisplayWidth(expanded[i]) > 1)
-                px += _cjkCharWidth;
-            else
-                px += _charWidth;
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue; // low surrogate — already counted
+            px += CharPixelWidth(expanded, i, w);
         }
         return px;
     }
@@ -1773,12 +1785,28 @@ public sealed class EditorSurface : Control
         int accumulated = 0;
         for (int i = startChar; i < expanded.Length; i++)
         {
-            int charPx = GetCharDisplayWidth(expanded[i]) > 1 ? _cjkCharWidth : _charWidth;
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue; // low surrogate — already counted
+            int charPx = CharPixelWidth(expanded, i, w);
             if (accumulated + charPx / 2 > pixelX)
                 return i;
             accumulated += charPx;
         }
         return expanded.Length;
+    }
+
+    /// <summary>
+    /// Returns the pixel width for a character at <paramref name="index"/> in
+    /// <paramref name="text"/>, using the correct measured width for narrow,
+    /// BMP CJK, or supplementary-plane CJK characters.
+    /// </summary>
+    private int CharPixelWidth(string text, int index, int displayWidth)
+    {
+        if (displayWidth <= 1) return _charWidth;
+        // Supplementary plane (surrogate pair) — use separately measured width.
+        if (char.IsHighSurrogate(text[index]))
+            return _suppCjkCharWidth;
+        return _cjkCharWidth;
     }
 
     /// <summary>
@@ -1790,6 +1818,10 @@ public sealed class EditorSurface : Control
     {
         // Fast path: ASCII and most Latin/Cyrillic/Greek characters.
         if (c < 0x1100) return 1;
+
+        // Low surrogate of a pair — caller should use the string overload instead.
+        // Return 0 so it doesn't add extra width when encountered alone.
+        if (char.IsLowSurrogate(c)) return 0;
 
         // East Asian Fullwidth and Wide character ranges.
         // Based on Unicode East Asian Width property (UAX #11).
@@ -1804,6 +1836,59 @@ public sealed class EditorSurface : Control
         if (c >= 0xFE30 && c <= 0xFE6F) return 2; // CJK Compatibility Forms, Small Form Variants
         if (c >= 0xFF01 && c <= 0xFF60) return 2; // Fullwidth Latin, Halfwidth CJK punctuation
         if (c >= 0xFFE0 && c <= 0xFFE6) return 2; // Fullwidth signs (¢, £, ¥, etc.)
+
+        // High surrogate — can't determine width without the low surrogate.
+        // Callers iterating strings should use GetCharDisplayWidth(string, int).
+        if (char.IsHighSurrogate(c)) return 2; // Assume wide (most supplementary CJK are)
+
+        return 1;
+    }
+
+    /// <summary>
+    /// Returns the display width of the character at <paramref name="index"/>
+    /// in <paramref name="text"/>, correctly handling surrogate pairs for
+    /// supplementary-plane characters (e.g. CJK Extension B/C/D/E/F/G/H).
+    /// </summary>
+    internal static int GetCharDisplayWidth(string text, int index)
+    {
+        char c = text[index];
+
+        // Low surrogate — already counted with its high surrogate.
+        if (char.IsLowSurrogate(c)) return 0;
+
+        if (!char.IsHighSurrogate(c))
+            return GetCharDisplayWidth(c);
+
+        // Surrogate pair → decode full code point.
+        if (index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+        {
+            int cp = char.ConvertToUtf32(c, text[index + 1]);
+            return GetCodePointDisplayWidth(cp);
+        }
+
+        // Unpaired high surrogate — treat as narrow.
+        return 1;
+    }
+
+    /// <summary>
+    /// Returns the display width for a full Unicode code point (including supplementary planes).
+    /// </summary>
+    private static int GetCodePointDisplayWidth(int codePoint)
+    {
+        // BMP range — delegate to the char overload.
+        if (codePoint <= 0xFFFF)
+            return GetCharDisplayWidth((char)codePoint);
+
+        // Supplementary CJK / East Asian wide ranges (UAX #11).
+        if (codePoint >= 0x20000 && codePoint <= 0x2A6DF) return 2; // CJK Unified Ideographs Extension B
+        if (codePoint >= 0x2A700 && codePoint <= 0x2B73F) return 2; // Extension C
+        if (codePoint >= 0x2B740 && codePoint <= 0x2B81F) return 2; // Extension D
+        if (codePoint >= 0x2B820 && codePoint <= 0x2CEAF) return 2; // Extension E
+        if (codePoint >= 0x2CEB0 && codePoint <= 0x2EBEF) return 2; // Extension F
+        if (codePoint >= 0x2EBF0 && codePoint <= 0x2F7FF) return 2; // Extension I
+        if (codePoint >= 0x2F800 && codePoint <= 0x2FA1F) return 2; // CJK Compat Ideographs Supplement
+        if (codePoint >= 0x30000 && codePoint <= 0x3134F) return 2; // Extension G
+        if (codePoint >= 0x31350 && codePoint <= 0x323AF) return 2; // Extension H
 
         return 1;
     }

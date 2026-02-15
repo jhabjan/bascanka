@@ -125,6 +125,10 @@
 
     "CommandPaletteNotYetImplemented": "Палета команди биће доступна у будућој верзији.",
 
+    "SavingProgressFormat": "Чување\u2026 {0} / {1}",
+    "ReloadingAfterSave": "Поновно учитавање датотеке\u2026",
+    "ReloadingProgressFormat": "Поновно учитавање\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "Зум: {0}%",
 
     "SettingsTitle": "Подешавања",

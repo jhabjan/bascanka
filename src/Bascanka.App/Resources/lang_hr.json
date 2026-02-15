@@ -125,6 +125,10 @@
 
     "CommandPaletteNotYetImplemented": "Paleta naredbi bit \u0107e dostupna u budu\u0107oj verziji.",
 
+    "SavingProgressFormat": "Spremanje\u2026 {0} / {1}",
+    "ReloadingAfterSave": "Ponovno u\u010ditavanje datoteke\u2026",
+    "ReloadingProgressFormat": "Ponovno u\u010ditavanje\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "Zum: {0}%",
 
     "SettingsTitle": "Postavke",

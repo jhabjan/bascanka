@@ -536,6 +536,14 @@ public sealed class PieceTable : IDisposable
 
         if (piece.BufferType == BufferType.Original)
         {
+            // Fast path: use pre-computed line offsets with binary search O(log N)
+            // instead of scanning the entire range O(N).
+            if (_original is IPrecomputedLineFeeds precomputed
+                && precomputed.LineOffsets is { } lineOffsets)
+            {
+                return CountLineFeedsFromOffsets(lineOffsets, piece.Start, piece.Length);
+            }
+
             return _original.CountLineFeeds(piece.Start, piece.Length);
         }
         else
@@ -550,6 +558,58 @@ public sealed class PieceTable : IDisposable
             }
             return count;
         }
+    }
+
+    /// <summary>
+    /// Counts newlines in the original-buffer range [start, start+length) by
+    /// binary-searching the pre-computed line-offset table.  Each entry in
+    /// <paramref name="lineOffsets"/> is the character offset of a line start;
+    /// a newline at position <c>p</c> corresponds to a line start at <c>p+1</c>.
+    /// So counting entries where <c>start &lt; entry &lt;= start + length</c>
+    /// gives the number of newlines in the range.
+    /// </summary>
+    private static int CountLineFeedsFromOffsets(long[] lineOffsets, long start, long length)
+    {
+        // We need entries in (start, start + length].
+        long lo = start + 1;
+        long hi = start + length;
+
+        // Find first index where lineOffsets[index] >= lo.
+        int left = LowerBound(lineOffsets, lo);
+        // Find first index where lineOffsets[index] > hi.
+        int right = UpperBound(lineOffsets, hi);
+
+        return right - left;
+    }
+
+    /// <summary>Returns the index of the first element >= value.</summary>
+    private static int LowerBound(long[] arr, long value)
+    {
+        int lo = 0, hi = arr.Length;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo) / 2;
+            if (arr[mid] < value)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        return lo;
+    }
+
+    /// <summary>Returns the index of the first element > value.</summary>
+    private static int UpperBound(long[] arr, long value)
+    {
+        int lo = 0, hi = arr.Length;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo) / 2;
+            if (arr[mid] <= value)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        return lo;
     }
 
     /// <summary>

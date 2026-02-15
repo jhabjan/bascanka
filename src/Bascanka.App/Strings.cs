@@ -173,6 +173,11 @@ internal static class Strings
     internal static string CommandPaletteNotYetImplemented => LocalizationManager.Get("CommandPaletteNotYetImplemented");
 
 
+    // Save progress
+    internal static string SavingProgressFormat => LocalizationManager.Get("SavingProgressFormat");
+    internal static string ReloadingAfterSave => LocalizationManager.Get("ReloadingAfterSave");
+    internal static string ReloadingProgressFormat => LocalizationManager.Get("ReloadingProgressFormat");
+
     // Zoom
     internal static string ZoomLevelFormat => LocalizationManager.Get("ZoomLevelFormat");
 

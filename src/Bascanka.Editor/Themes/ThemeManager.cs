@@ -33,7 +33,7 @@ public sealed class ThemeManager
         // Register the two built-in themes and default to System.
         var dark = new DarkTheme();
         var light = new LightTheme();
-        var system= new SystemTheme();
+        var system = new SystemTheme();
         _fallbackTheme = dark;
         _themes[dark.Name] = dark;
         _themes[light.Name] = light;

@@ -125,6 +125,10 @@
 
     "CommandPaletteNotYetImplemented": "Command Palette will be available in a future version.",
 
+    "SavingProgressFormat": "Saving\u2026 {0} / {1}",
+    "ReloadingAfterSave": "Reloading file\u2026",
+    "ReloadingProgressFormat": "Reloading\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "Zoom: {0}%",
 
     "SettingsTitle": "Settings",

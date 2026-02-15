@@ -410,6 +410,13 @@ public sealed class EditorControl : UserControl
         set => _fileSizeBytes = value;
     }
 
+    /// <summary>
+    /// True when the document is backed by a memory-mapped file source.
+    /// Save operations must use a temp-file + rename strategy to avoid
+    /// file-locking conflicts.
+    /// </summary>
+    public bool IsMemoryMappedDocument { get; set; }
+
     /// <summary>The caret manager.</summary>
     public CaretManager CaretMgr => _caretManager;
 
@@ -765,6 +772,9 @@ public sealed class EditorControl : UserControl
 
     /// <summary>Returns the entire document text.</summary>
     public string GetAllText() => _document.ToString();
+
+    /// <summary>Returns a substring of the document.</summary>
+    public string GetText(long offset, long length) => _document.GetText(offset, length);
 
     /// <summary>Returns the length of the document in characters.</summary>
     public long GetBufferLength() => _document.Length;

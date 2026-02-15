@@ -14,6 +14,35 @@ Bascanka focuses on efficient resource usage and fast text processing while main
 
 ## Downloads
 
+### 📦 Bascanka v.1.0.2
+
+#### Release notes
+- added CJK / Unicode Character Support - Fixed cursor positioning for CJK (Chinese, Japanese, Korean) and other fullwidth characters. The caret, selection highlights, search highlights, and all   other visual elements now align correctly with double-width characters.
+- added GB2312 encoding and support for detecting GB2312 when opening files.
+- added the ability to compare opened tabs text via the tab right-click context menu.
+- added a per-tab progress bar when saving large files, allowing users to continue working on other tabs while a file is being saved.
+- added system theme detection feature.
+- added Chinese UI localization.
+- added Serbian (Cyrillic) UI localization.
+- fixed arrow key navigation to skip over surrogate pairs as a single unit instead of requiring two key presses per supplementary character.
+- fixed box/column selection losing column mode when starting with Delete or Backspace, so it now stays in column mode for continued editing.
+- fixed performance issue when editing large files and jumping + making changes between beginning and end of the file.
+- extended the About window to include contributors and release notes.
+  
+---
+
+- **Framework-dependent (small download - requires .NET 10 runtime)**  
+  Single portable EXE (~2 MB). Use this if .NET 10 is already installed on your system.  
+  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.2.bin.zip  
+  **SHA256:** `8C736BB162E4F1D6491B44163D4E32175975ACDB75F12E0CC6FF790C1D5F02EC`
+
+- **Self-contained (no runtime required)**  
+  Single portable EXE with .NET 10 included (~120 MB). Works on any supported Windows machine without installing .NET.  
+  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.2.bin.sc.zip  
+  **SHA256:** `77C4A1873555EF02CA9CC8B1FF21D3D0DE5EC398FC678BD32BA8DFC164703010`
+
+All builds are portable - no installation required.
+
 ### 📦 Bascanka v.1.0.1
 
 #### Release notes
@@ -25,18 +54,6 @@ Bascanka focuses on efficient resource usage and fast text processing while main
 - extended to be fully customizable via Tools > Settings (theme colors, fonts, text rendering engine limits, etc).
 - introduced a --reset (-r) command-line parameter for bascanka.exe, allowing users to clear the session state and start with a fresh instance
 - other small bug fixes
-  
----
-
-- **Framework-dependent (small download - requires .NET 10 runtime)**  
-  Single portable EXE (~2 MB). Use this if .NET 10 is already installed on your system.  
-  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.1.bin.zip  
-  **SHA256:** `B75AE62421315E7DBF7C6F71A5742F2515F58926AF844D78A71D699767DD2361`
-
-- **Self-contained (no runtime required)**  
-  Single portable EXE with .NET 10 included (~120 MB). Works on any supported Windows machine without installing .NET.  
-  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.1.bin.sc.zip  
-  **SHA256:** `F9EDA1CEB22B6B3F713FFD11D79E9479F2AD0599DEF4C66BD6C9B3152419EB31`
 
 All builds are portable - no installation required.
 

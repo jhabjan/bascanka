@@ -137,6 +137,12 @@ internal static class SettingsManager
     // Theme overrides
     public const string KeyThemeOverridesPrefix = "ThemeOverrides.";
 
+    // Dialog sizes
+    public const string KeySettingsWidth = "SettingsFormWidth";
+    public const string KeySettingsHeight = "SettingsFormHeight";
+    public const string KeyHighlightDlgWidth = "HighlightDlgWidth";
+    public const string KeyHighlightDlgHeight = "HighlightDlgHeight";
+
     // Performance
     public const string KeyLargeFileThresholdMB = "LargeFileThresholdMB";
     public const string KeyFoldingMaxFileSizeMB = "FoldingMaxFileSizeMB";

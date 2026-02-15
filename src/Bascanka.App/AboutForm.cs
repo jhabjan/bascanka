@@ -4,7 +4,7 @@ namespace Bascanka.App;
 
 /// <summary>
 /// About dialog showing application info, the Bašćanska ploča image,
-/// and credits.
+/// credits on the left, and release notes on the right.
 /// </summary>
 internal sealed class AboutForm : Form
 {
@@ -18,25 +18,63 @@ internal sealed class AboutForm : Form
         ShowInTaskbar = false;
         BackColor = Color.FromArgb(30, 30, 30);
         ForeColor = Color.FromArgb(220, 220, 220);
-        ClientSize = new Size(520, 800);
+        ClientSize = new Size(1060, 800);
 
-        // ── Image ────────────────────────────────────────────────────
-        var pictureBox = new PictureBox
+        var asm = Assembly.GetExecutingAssembly();
+
+        // ── Bottom bar (OK button) ────────────────────────────────────
+        var bottomPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 50,
+            BackColor = BackColor,
+        };
+
+        var okButton = new Button
+        {
+            Text = Strings.ButtonOK,
+            DialogResult = DialogResult.OK,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(50, 50, 50),
+            ForeColor = Color.FromArgb(220, 220, 220),
+            Font = new Font("Segoe UI", 9.5f),
+            Size = new Size(90, 32),
+        };
+        okButton.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
+
+        bottomPanel.Layout += (_, _) =>
+        {
+            okButton.Location = new Point(
+                (bottomPanel.ClientSize.Width - okButton.Width) / 2,
+                (bottomPanel.Height - okButton.Height) / 2);
+        };
+        bottomPanel.Controls.Add(okButton);
+
+        AcceptButton = okButton;
+        CancelButton = okButton;
+
+        // ── Left panel (about info) ───────────────────────────────────
+        var leftPanel = new Panel
+        {
+            Dock = DockStyle.Left,
+            Width = 520,
+            BackColor = BackColor,
+            AutoScroll = true,
+        };
+
+        // Application logo.
+        var logoPicture = new PictureBox
         {
             SizeMode = PictureBoxSizeMode.Zoom,
             Dock = DockStyle.Top,
-            Height = 240,
-            Padding = new Padding(20, 0, 20, 0),
-            BackColor = Color.FromArgb(30, 30, 30),
+            Height = 128,
+            BackColor = BackColor,
         };
+        using var logoStream = asm.GetManifestResourceStream("Bascanka.App.Resources.bascanka_logo.png");
+        if (logoStream is not null)
+            logoPicture.Image = Image.FromStream(logoStream);
 
-        // Load the embedded resource image.
-        var asm = Assembly.GetExecutingAssembly();
-        using var stream = asm.GetManifestResourceStream("Bascanka.App.Resources.bascanska_ploca.jpg");
-        if (stream is not null)
-            pictureBox.Image = Image.FromStream(stream);
-
-        // ── Title ────────────────────────────────────────────────────
+        // Title.
         var titleLabel = new Label
         {
             Text = "Bascanka",
@@ -45,10 +83,10 @@ internal sealed class AboutForm : Form
             TextAlign = ContentAlignment.MiddleCenter,
             Dock = DockStyle.Top,
             Height = 44,
-            Padding = new Padding(0, 4, 0, 0)
+            Padding = new Padding(0, 4, 0, 0),
         };
 
-        // ── Version ──────────────────────────────────────────────────
+        // Version.
         string version = asm.GetName().Version?.ToString(3) ?? "1.0.0";
         var versionLabel = new Label
         {
@@ -60,7 +98,7 @@ internal sealed class AboutForm : Form
             Height = 22,
         };
 
-        // ── Copyright ────────────────────────────────────────────────
+        // Copyright.
         var copyrightLabel = new Label
         {
             Text = "\u00a9 2026 Josip Habjan. All rights reserved.",
@@ -71,7 +109,7 @@ internal sealed class AboutForm : Form
             Height = 20,
         };
 
-        // ── Description ──────────────────────────────────────────────
+        // Description.
         var descLabel = new Label
         {
             Text = "Open source text editor for Windows.",
@@ -83,7 +121,7 @@ internal sealed class AboutForm : Form
             Padding = new Padding(0, 4, 0, 0),
         };
 
-        // ── License ────────────────────────────────────────────────
+        // License.
         var licenseLabel = new Label
         {
             Text = "GNU GENERAL PUBLIC LICENSE Version 3",
@@ -94,21 +132,20 @@ internal sealed class AboutForm : Form
             Height = 20,
         };
 
-        // ── Separator ────────────────────────────────────────────────
+        // Separator.
         var separator = new Panel
         {
             Dock = DockStyle.Top,
             Height = 1,
             BackColor = Color.FromArgb(60, 60, 60),
-            Margin = new Padding(20, 6, 20, 6),
         };
 
-        // ── Origin text ──────────────────────────────────────────────
+        // Origin text.
         var originLabel = new Label
         {
-            Text = "The name \"Bascanka\" comes from the Bašćanska ploča " +
-                   "(Baška tablet) - a stone tablet from around 1100 AD, " +
-                   "found in the Church of St. Lucy near Baška on the island " +
+            Text = "The name \"Bascanka\" comes from the Ba\u0161\u0107anska plo\u010da " +
+                   "(Ba\u0161ka tablet) - a stone tablet from around 1100 AD, " +
+                   "found in the Church of St. Lucy near Ba\u0161ka on the island " +
                    "of Krk, Croatia. It is one of the oldest known inscriptions " +
                    "in the Croatian language, written in Glagolitic script. The " +
                    "tablet documents a royal land donation by King Zvonimir and " +
@@ -122,12 +159,12 @@ internal sealed class AboutForm : Form
             Padding = new Padding(24, 12, 24, 12),
         };
 
-        // ── Author (panel with static text + clickable email) ────────
+        // Author panel with clickable email.
         var authorPanel = new Panel
         {
             Dock = DockStyle.Top,
             Height = 40,
-            BackColor = Color.FromArgb(30, 30, 30),
+            BackColor = BackColor,
             Padding = new Padding(0, 6, 0, 12),
         };
 
@@ -136,7 +173,6 @@ internal sealed class AboutForm : Form
 
         const string authorPrefix = "Contact author: ";
         const string email = "habjan@gmail.com";
-        const string authorSuffix = "";
 
         var authorPrefixLabel = new Label
         {
@@ -171,78 +207,141 @@ internal sealed class AboutForm : Form
             timer.Start();
         };
 
-        var authorSuffixLabel = new Label
-        {
-            Text = authorSuffix,
-            Font = authorFont,
-            ForeColor = Color.FromArgb(200, 200, 200),
-            AutoSize = true,
-        };
-
-        // Position the three labels centered within the panel.
         authorPanel.Layout += (_, _) =>
         {
-            int totalWidth = authorPrefixLabel.Width + emailLink.Width + authorSuffixLabel.Width;
+            int totalWidth = authorPrefixLabel.Width + emailLink.Width;
             int x = (authorPanel.ClientSize.Width - totalWidth) / 2;
             int y = authorPanel.Padding.Top;
             authorPrefixLabel.Location = new Point(x, y);
             emailLink.Location = new Point(x + authorPrefixLabel.Width, y);
-            authorSuffixLabel.Location = new Point(x + authorPrefixLabel.Width + emailLink.Width, y);
         };
 
-        authorPanel.Controls.Add(authorSuffixLabel);
         authorPanel.Controls.Add(emailLink);
         authorPanel.Controls.Add(authorPrefixLabel);
 
-        // ── Application logo ─────────────────────────────────────────
-        var logoPicture = new PictureBox
+        // Bašćanska ploča image.
+        var pictureBox = new PictureBox
         {
             SizeMode = PictureBoxSizeMode.Zoom,
             Dock = DockStyle.Top,
-            Height = 128,
-            Padding = new Padding(0, 0, 0, 0),
-            BackColor = Color.FromArgb(30, 30, 30),
+            Height = 240,
+            Padding = new Padding(20, 0, 20, 0),
+            BackColor = BackColor,
         };
-        using var logoStream = asm.GetManifestResourceStream("Bascanka.App.Resources.bascanka_logo.png");
-        if (logoStream is not null)
-            logoPicture.Image = Image.FromStream(logoStream);
+        using var stream = asm.GetManifestResourceStream("Bascanka.App.Resources.bascanska_ploca.jpg");
+        if (stream is not null)
+            pictureBox.Image = Image.FromStream(stream);
 
-        // ── OK button ────────────────────────────────────────────────
-        var okButton = new Button
+        // Assemble left panel (reverse order for Dock.Top stacking).
+        leftPanel.Controls.Add(pictureBox);
+        leftPanel.Controls.Add(new Label { Dock = DockStyle.Top, Height = 16, BackColor = BackColor });
+        leftPanel.Controls.Add(authorPanel);
+        leftPanel.Controls.Add(originLabel);
+        leftPanel.Controls.Add(separator);
+        leftPanel.Controls.Add(new Label { Dock = DockStyle.Top, Height = 8, BackColor = BackColor });
+        leftPanel.Controls.Add(licenseLabel);
+        leftPanel.Controls.Add(descLabel);
+        leftPanel.Controls.Add(copyrightLabel);
+        leftPanel.Controls.Add(versionLabel);
+        leftPanel.Controls.Add(titleLabel);
+        leftPanel.Controls.Add(logoPicture);
+        leftPanel.Controls.Add(new Label { Dock = DockStyle.Top, Height = 16, BackColor = BackColor });
+
+        // ── Vertical separator ────────────────────────────────────────
+        var vertSeparator = new Panel
         {
-            Text = Strings.ButtonOK,
-            DialogResult = DialogResult.OK,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(50, 50, 50),
-            ForeColor = Color.FromArgb(220, 220, 220),
-            Font = new Font("Segoe UI", 9.5f),
-            Size = new Size(90, 32),
-            Anchor = AnchorStyles.Bottom,
+            Dock = DockStyle.Left,
+            Width = 1,
+            BackColor = Color.FromArgb(60, 60, 60),
         };
-        okButton.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
-        okButton.Location = new Point((ClientSize.Width - 90) / 2, ClientSize.Height - 46);
 
-        AcceptButton = okButton;
-        CancelButton = okButton;
+        // ── Right panel (release notes) ───────────────────────────────
+        var rightPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = BackColor,
+            Padding = new Padding(12, 16, 12, 8),
+        };
 
-        // ── Add controls (reverse order for Dock.Top stacking) ───────
-        // Bottom-most first: OK button, then image, then content, then logo at top.
-        var spacer = new Label { Dock = DockStyle.Top, Height = 16, BackColor = BackColor };
+        // Contributors.
+        string contributorsText = "";
+        using var contribStream = asm.GetManifestResourceStream("Bascanka.App.Resources.contributors.txt");
+        if (contribStream is not null)
+        {
+            using var reader = new StreamReader(contribStream);
+            contributorsText = reader.ReadToEnd();
+        }
 
-        Controls.Add(okButton);
-        Controls.Add(spacer);
-        Controls.Add(pictureBox);
-        Controls.Add(new Label { Dock = DockStyle.Top, Height = 16, BackColor = BackColor });
-        Controls.Add(authorPanel);
-        Controls.Add(originLabel);
-        Controls.Add(separator);
-        Controls.Add(new Label { Dock = DockStyle.Top, Height = 8, BackColor = BackColor });
-        Controls.Add(licenseLabel);
-        Controls.Add(descLabel);
-        Controls.Add(copyrightLabel);
-        Controls.Add(versionLabel);
-        Controls.Add(titleLabel);
-        Controls.Add(logoPicture);
-        Controls.Add(new Label { Dock = DockStyle.Top, Height = 16, BackColor = BackColor });
+        var contributorsBox = new RichTextBox
+        {
+            Text = contributorsText,
+            ReadOnly = true,
+            WordWrap = false,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            Dock = DockStyle.Top,
+            Height = 180,
+            Font = new Font("Consolas", 8.5f),
+            BackColor = Color.FromArgb(25, 25, 25),
+            ForeColor = Color.FromArgb(180, 180, 180),
+            BorderStyle = BorderStyle.None,
+            DetectUrls = true,
+        };
+        contributorsBox.LinkClicked += (_, e) =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.LinkText!) { UseShellExecute = true }); }
+            catch { }
+        };
+        contributorsBox.Select(0, 0);
+
+        var contribSpacer = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 16,
+            BackColor = BackColor,
+        };
+
+        // Release notes.
+        string releaseNotesText = "";
+        using var rnStream = asm.GetManifestResourceStream("Bascanka.App.Resources.release_notes.txt");
+        if (rnStream is not null)
+        {
+            using var reader = new StreamReader(rnStream);
+            releaseNotesText = reader.ReadToEnd();
+        }
+
+        var releaseNotesBox = new RichTextBox
+        {
+            Text = releaseNotesText,
+            ReadOnly = true,
+            WordWrap = false,
+            ScrollBars = RichTextBoxScrollBars.Both,
+            Dock = DockStyle.Fill,
+            Font = new Font("Consolas", 9f),
+            BackColor = Color.FromArgb(25, 25, 25),
+            ForeColor = Color.FromArgb(200, 200, 200),
+            BorderStyle = BorderStyle.None,
+            DetectUrls = true,
+        };
+        releaseNotesBox.LinkClicked += (_, e) =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.LinkText!) { UseShellExecute = true }); }
+            catch { }
+        };
+        releaseNotesBox.SelectAll();
+        releaseNotesBox.SelectionTabs = [28, 56, 84, 112];
+        releaseNotesBox.Select(0, 0);
+
+        // Focus the OK button when the form is shown.
+        Shown += (_, _) => okButton.Focus();
+
+        rightPanel.Controls.Add(releaseNotesBox);
+        rightPanel.Controls.Add(contribSpacer);
+        rightPanel.Controls.Add(contributorsBox);
+
+        // ── Assemble form ─────────────────────────────────────────────
+        Controls.Add(rightPanel);
+        Controls.Add(vertSeparator);
+        Controls.Add(leftPanel);
+        Controls.Add(bottomPanel);
     }
 }

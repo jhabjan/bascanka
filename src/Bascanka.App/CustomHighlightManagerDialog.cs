@@ -55,14 +55,30 @@ public sealed class CustomHighlightManagerDialog : Form
 
         // ── Form setup ─────────────────────────────────────────────────
         Text = Strings.CustomHighlightTitle;
-        Size = new Size(1060, 620);
         MinimumSize = new Size(840, 480);
+
+        // Restore saved size or use a larger default.
+        int savedW = SettingsManager.GetInt(SettingsManager.KeyHighlightDlgWidth, 1120);
+        int savedH = SettingsManager.GetInt(SettingsManager.KeyHighlightDlgHeight, 680);
+        Size = new Size(Math.Max(savedW, MinimumSize.Width),
+                        Math.Max(savedH, MinimumSize.Height));
+
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         MinimizeBox = false;
         BackColor = theme.EditorBackground;
         ForeColor = theme.EditorForeground;
+
+        // Persist size on close.
+        FormClosing += (_, _) =>
+        {
+            if (WindowState == FormWindowState.Normal)
+            {
+                SettingsManager.SetInt(SettingsManager.KeyHighlightDlgWidth, Size.Width);
+                SettingsManager.SetInt(SettingsManager.KeyHighlightDlgHeight, Size.Height);
+            }
+        };
 
         // ── Left panel (profiles) ──────────────────────────────────────
         var leftPanel = new Panel

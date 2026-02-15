@@ -85,13 +85,27 @@ public sealed class FileWatcher : IDisposable
         watcher.Deleted += (_, args) =>
         {
             if (_disposed) return;
-            _form.BeginInvoke(() => HandleFileDeleted(path));
+            _form.BeginInvoke(() =>
+            {
+                if (_suppressedPaths.TryGetValue(path, out var suppressTime)
+                    && (DateTime.UtcNow - suppressTime).TotalMilliseconds < 2000)
+                    return;
+
+                HandleFileDeleted(path);
+            });
         };
 
         watcher.Renamed += (_, args) =>
         {
             if (_disposed) return;
-            _form.BeginInvoke(() => HandleFileDeleted(path));
+            _form.BeginInvoke(() =>
+            {
+                if (_suppressedPaths.TryGetValue(path, out var suppressTime)
+                    && (DateTime.UtcNow - suppressTime).TotalMilliseconds < 2000)
+                    return;
+
+                HandleFileDeleted(path);
+            });
         };
 
         _watchers[path] = entry;
