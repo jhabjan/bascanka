@@ -2,6 +2,8 @@ name: Build & Release Bascanka
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -12,7 +14,7 @@ on:
         default: 'v1.0.1'
 
 jobs:
-  build-release:
+  build:
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -22,16 +24,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-
-      - name: Get version
-        id: get_version
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "::set-output name=version::${{ github.event.inputs.version }}"
-          else
-            echo "::set-output name=version::${GITHUB_REF#refs/tags/}"
-          fi
-        shell: bash
 
       - name: Restore dependencies
         run: dotnet restore src/Bascanka.App/Bascanka.App.csproj
@@ -44,26 +36,66 @@ jobs:
         run: |
           dotnet publish src/Bascanka.App/Bascanka.App.csproj -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=true -o publish_sc
 
+      - name: Set artifact name
+        id: artifact_name
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "basename=Bascanka.${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "basename=Bascanka.${TAG_NAME}" >> $GITHUB_OUTPUT
+          else
+            SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+            echo "basename=Bascanka.${SHORT_SHA}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Zip Framework-dependent
         run: |
-          Compress-Archive -Path publish_fd/* -DestinationPath Bascanka.${{ steps.get_version.outputs.version }}.bin.zip
+          Compress-Archive -Path publish_fd/* -DestinationPath ${{ steps.artifact_name.outputs.basename }}.bin.zip
 
       - name: Zip Self-contained
         run: |
-          Compress-Archive -Path publish_sc/* -DestinationPath Bascanka.${{ steps.get_version.outputs.version }}.bin.sc.zip
+          Compress-Archive -Path publish_sc/* -DestinationPath ${{ steps.artifact_name.outputs.basename }}.bin.sc.zip
 
       - name: Upload Framework-dependent Artifact
         uses: actions/upload-artifact@v3
         with:
           name: Bascanka_Framework_Dependent
-          path: Bascanka.${{ steps.get_version.outputs.version }}.bin.zip
+          path: ${{ steps.artifact_name.outputs.basename }}.bin.zip
 
       - name: Upload Self-contained Artifact
         uses: actions/upload-artifact@v3
         with:
           name: Bascanka_Self_Contained
-          path: Bascanka.${{ steps.get_version.outputs.version }}.bin.sc.zip
+          path: ${{ steps.artifact_name.outputs.basename }}.bin.sc.zip
 
+  release:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Download Framework-dependent Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: Bascanka_Framework_Dependent
+          path: .
+      - name: Download Self-contained Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: Bascanka_Self_Contained
+          path: .
+      - name: Get version
+        id: get_version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
