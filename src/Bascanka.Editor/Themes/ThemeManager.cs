@@ -26,17 +26,22 @@ public sealed class ThemeManager
     private readonly Dictionary<string, ITheme> _baseThemes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Dictionary<string, Color>> _overrides = new(StringComparer.OrdinalIgnoreCase);
     private ITheme _currentTheme;
+    private ITheme _fallbackTheme;
 
     private ThemeManager()
     {
-        // Register the two built-in themes and default to Dark.
+        // Register the two built-in themes and default to System.
         var dark = new DarkTheme();
         var light = new LightTheme();
+        var system= new SystemTheme();
+        _fallbackTheme = dark;
         _themes[dark.Name] = dark;
         _themes[light.Name] = light;
+        _themes[system.Name] = system;
         _baseThemes[dark.Name] = dark;
         _baseThemes[light.Name] = light;
-        _currentTheme = dark;
+        _baseThemes[system.Name] = system;
+        _currentTheme = system;
     }
 
     // ── Public API ────────────────────────────────────────────────────
@@ -84,14 +89,16 @@ public sealed class ThemeManager
     /// Activates the theme identified by <paramref name="name"/>.
     /// The comparison is case-insensitive.
     /// </summary>
-    /// <exception cref="KeyNotFoundException">
-    /// Thrown when no theme with the given name has been registered.
-    /// </exception>
     public void SetTheme(string name)
     {
-        if (!_themes.TryGetValue(name, out var theme))
-            throw new KeyNotFoundException($"No theme registered with the name \"{name}\".");
-        CurrentTheme = theme;
+        if (_themes.TryGetValue(name, out var theme))
+        {
+            CurrentTheme = theme;
+        }
+        else
+        {
+            theme = _fallbackTheme;
+        }
     }
 
     /// <summary>
