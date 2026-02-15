@@ -210,7 +210,7 @@ internal sealed class AboutForm : Form
         // ── OK button ────────────────────────────────────────────────
         var okButton = new Button
         {
-            Text = "OK",
+            Text = Strings.ButtonOK,
             DialogResult = DialogResult.OK,
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(50, 50, 50),
