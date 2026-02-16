@@ -128,10 +128,23 @@ public sealed class CaretManager : IDisposable
     public void MoveLeft()
     {
         if (_document is null || _offset == 0) return;
-        long newOffset = _offset - 1;
-        // If we landed on a low surrogate, skip back one more to pass the high surrogate.
-        if (newOffset > 0 && char.IsLowSurrogate(_document.GetCharAt(newOffset)))
+        long newOffset = _offset;
+
+        do
+        {
             newOffset--;
+            if (newOffset <= 0) { newOffset = 0; break; }
+
+            // Skip BMP zero-width characters (ZWJ, variation selectors) going backwards.
+            while (newOffset > 0 && IsZeroWidthChar(_document.GetCharAt(newOffset)))
+                newOffset--;
+
+            // If we landed on a low surrogate, skip back to the high surrogate.
+            if (newOffset > 0 && char.IsLowSurrogate(_document.GetCharAt(newOffset)))
+                newOffset--;
+        }
+        while (newOffset > 0 && (IsSkinToneModifierAt(newOffset) || IsSecondRegionalIndicatorAt(newOffset)));
+
         MoveTo(newOffset);
     }
 
@@ -143,7 +156,84 @@ public sealed class CaretManager : IDisposable
         // If we were on a high surrogate, skip the low surrogate too.
         if (char.IsHighSurrogate(_document.GetCharAt(_offset)) && newOffset < _document.Length)
             newOffset++;
+        // Skip over any following zero-width characters (BMP and supplementary).
+        while (newOffset < _document.Length)
+        {
+            if (IsZeroWidthChar(_document.GetCharAt(newOffset)))
+            {
+                newOffset++;
+                continue;
+            }
+            if (IsSkinToneModifierAt(newOffset))
+            {
+                newOffset += 2;
+                continue;
+            }
+            if (IsSecondRegionalIndicatorAt(newOffset))
+            {
+                newOffset += 2;
+                continue;
+            }
+            break;
+        }
         MoveTo(newOffset);
+    }
+
+    private static bool IsZeroWidthChar(char c) =>
+        c == '\u200B' || c == '\u200C' || c == '\u200D' ||
+        c == '\uFE0E' || c == '\uFE0F' || c == '\u2060' || c == '\uFEFF' ||
+        c == '\u20E3' ||
+        (c >= '\u0300' && c <= '\u036F') ||  // Combining Diacritical Marks
+        (c >= '\u0483' && c <= '\u0489') ||  // Combining Cyrillic
+        (c >= '\u1AB0' && c <= '\u1AFF') ||  // Combining Diacritical Marks Extended
+        (c >= '\u1DC0' && c <= '\u1DFF') ||  // Combining Diacritical Marks Supplement
+        (c >= '\u20D0' && c <= '\u20FF') ||  // Combining Diacritical Marks for Symbols
+        (c >= '\uFE20' && c <= '\uFE2F');    // Combining Half Marks
+
+    /// <summary>
+    /// Returns true if the surrogate pair at <paramref name="offset"/> is a
+    /// skin tone modifier (U+1F3FB–U+1F3FF), which should be treated as zero-width.
+    /// </summary>
+    private bool IsSkinToneModifierAt(long offset)
+    {
+        if (_document is null || offset + 1 >= _document.Length) return false;
+        char hi = _document.GetCharAt(offset);
+        if (!char.IsHighSurrogate(hi)) return false;
+        char lo = _document.GetCharAt(offset + 1);
+        if (!char.IsLowSurrogate(lo)) return false;
+        int cp = char.ConvertToUtf32(hi, lo);
+        return cp >= 0x1F3FB && cp <= 0x1F3FF;
+    }
+
+    /// <summary>
+    /// Returns true if the surrogate pair at <paramref name="offset"/> is the
+    /// second Regional Indicator in a flag pair (e.g. 🇧 in 🇬🇧).
+    /// Counts consecutive preceding Regional Indicators to determine pairing.
+    /// </summary>
+    private bool IsSecondRegionalIndicatorAt(long offset)
+    {
+        if (_document is null || offset + 1 >= _document.Length || offset < 2) return false;
+        char hi = _document.GetCharAt(offset);
+        if (!char.IsHighSurrogate(hi)) return false;
+        char lo = _document.GetCharAt(offset + 1);
+        if (!char.IsLowSurrogate(lo)) return false;
+        int cp = char.ConvertToUtf32(hi, lo);
+        if (cp < 0x1F1E0 || cp > 0x1F1FF) return false;
+
+        // Count consecutive preceding Regional Indicators.
+        int riCount = 0;
+        long j = offset;
+        while (j >= 2)
+        {
+            j -= 2;
+            char prevHi = _document.GetCharAt(j);
+            char prevLo = _document.GetCharAt(j + 1);
+            if (!char.IsHighSurrogate(prevHi) || !char.IsLowSurrogate(prevLo)) break;
+            int prevCp = char.ConvertToUtf32(prevHi, prevLo);
+            if (prevCp < 0x1F1E0 || prevCp > 0x1F1FF) break;
+            riCount++;
+        }
+        return riCount % 2 == 1;
     }
 
     /// <summary>Moves the caret one line up, preserving the desired column.</summary>

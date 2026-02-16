@@ -1,4 +1,10 @@
-﻿v.1.0.2.		2026-02-15
+﻿v.1.0.3.		????-??-??
+--------------------------
+- fixed emoji and special character rendering, cursor positioning, selection, and caret navigation - including surrogate pairs, ZWJ sequences and variation selectors.
+- lines containing wide or special characters are now rendered character-by-character to prevent GDI font fallback from causing cursor drift.
+- improved Unicode character support.
+
+v.1.0.2.		2026-02-15
 --------------------------
 - added CJK / Unicode Character Support - Fixed cursor positioning for CJK (Chinese, Japanese, Korean) and other fullwidth characters. The caret, selection highlights, search highlights, and all   other visual elements now align correctly with double-width characters.
 - added GB2312 encoding and support for detecting GB2312 when opening files.

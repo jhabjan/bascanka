@@ -34,6 +34,9 @@ public sealed class EditorSurface : Control
     private int _charWidth;
     private int _cjkCharWidth;
     private int _suppCjkCharWidth; // supplementary plane CJK (Extension B+)
+    private int _bmpEmojiCharWidth;  // BMP emoji (e.g. ✅) via Segoe UI Symbol
+    private int _suppEmojiCharWidth; // supplementary emoji (e.g. 😀) via Segoe UI Symbol/Emoji
+    private Font? _emojiFallbackFont; // Segoe UI Emoji for keycap sequences (GDI can't combine them with monospace fonts)
     private int _lineHeight;
 
     // References to collaborating managers.
@@ -338,6 +341,29 @@ public sealed class EditorSurface : Control
         Size suppCjkSize = TextRenderer.MeasureText(g, "\U00020BB7", _editorFont, Size.Empty,
             TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         _suppCjkCharWidth = Math.Max(_charWidth, suppCjkSize.Width);
+
+        // Measure emoji advance widths using differential method to eliminate
+        // per-string overhead from MeasureText.  BMP and supplementary emoji
+        // may use different fallback fonts with different metrics.
+        var mflags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix;
+
+        // BMP emoji (U+2705 ✅)
+        Size bmpE1 = TextRenderer.MeasureText(g, "\u2705", _editorFont, Size.Empty, mflags);
+        Size bmpE2 = TextRenderer.MeasureText(g, "\u2705\u2705", _editorFont, Size.Empty, mflags);
+        int bmpAdv = bmpE2.Width - bmpE1.Width;
+        _bmpEmojiCharWidth = bmpAdv > 0 ? bmpAdv : Math.Max(_charWidth, bmpE1.Width);
+
+        // Supplementary emoji (U+1F600 😀 — surrogate pair)
+        Size suppE1 = TextRenderer.MeasureText(g, "\U0001F600", _editorFont, Size.Empty, mflags);
+        Size suppE2 = TextRenderer.MeasureText(g, "\U0001F600\U0001F600", _editorFont, Size.Empty, mflags);
+        int suppAdv = suppE2.Width - suppE1.Width;
+        _suppEmojiCharWidth = suppAdv > 0 ? suppAdv : Math.Max(_charWidth, suppE1.Width);
+
+        // Cache a Segoe UI Emoji font for keycap sequences — GDI's per-character
+        // font fallback can't compose digit + U+20E3 when the base font is monospace.
+        _emojiFallbackFont?.Dispose();
+        try { _emojiFallbackFont = new Font("Segoe UI Emoji", _editorFont.Size, FontStyle.Regular, _editorFont.Unit); }
+        catch { _emojiFallbackFont = null; }
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -561,8 +587,7 @@ public sealed class EditorSurface : Control
                         else if (tokens is not null && tokens.Count > 0)
                             RenderTokenizedWrapSegment(g, wrapText, expanded, tokens, segStart, segLen, y);
                         else
-                            TextRenderer.DrawText(g, segment, _editorFont,
-                                new Point(TextLeftPadding, y), _theme.EditorForeground, DrawFlags);
+                            DrawTextAligned(g, segment, _editorFont, TextLeftPadding, y, _theme.EditorForeground);
                     }
 
                     // Render whitespace glyphs if enabled.
@@ -732,8 +757,7 @@ public sealed class EditorSurface : Control
         string visible = expanded.Substring(startCol,
             Math.Min(MaxVisibleColumns + 1, expanded.Length - startCol));
 
-        TextRenderer.DrawText(g, visible, _editorFont,
-            new Point(TextLeftPadding, y), _theme.EditorForeground, DrawFlags);
+        DrawTextAligned(g, visible, _editorFont, TextLeftPadding, y, _theme.EditorForeground);
     }
 
     private void RenderTokenizedLine(Graphics g, string lineText, List<Token> tokens, int y, int hOffset)
@@ -762,8 +786,7 @@ public sealed class EditorSurface : Control
             int x = px + TextLeftPadding;
             Color color = _theme.GetTokenColor(token.Type);
 
-            TextRenderer.DrawText(g, fragment, _editorFont,
-                new Point(x, y), color, DrawFlags);
+            DrawTextAligned(g, fragment, _editorFont, x, y, color);
         }
     }
 
@@ -842,8 +865,7 @@ public sealed class EditorSurface : Control
         if (result.Spans is null or { Count: 0 })
         {
             string visible = expanded.Substring(startCol, endCol - startCol);
-            TextRenderer.DrawText(g, visible, _editorFont,
-                new Point(TextLeftPadding, y), defaultFg, DrawFlags);
+            DrawTextAligned(g, visible, _editorFont, TextLeftPadding, y, defaultFg);
             return;
         }
 
@@ -893,8 +915,7 @@ public sealed class EditorSurface : Control
         if (result.Spans is null or { Count: 0 })
         {
             string segment = expanded.Substring(segStart, segLen);
-            TextRenderer.DrawText(g, segment, _editorFont,
-                new Point(TextLeftPadding, y), defaultFg, DrawFlags);
+            DrawTextAligned(g, segment, _editorFont, TextLeftPadding, y, defaultFg);
             return;
         }
 
@@ -916,7 +937,7 @@ public sealed class EditorSurface : Control
                 int gapEnd = Math.Min(spanStart, segEnd);
                 string fragment = expanded.Substring(cursor, gapEnd - cursor);
                 int x = DisplayX(expanded, segStart, cursor) + TextLeftPadding;
-                TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), defaultFg, DrawFlags);
+                DrawTextAligned(g, fragment, _editorFont, x, y, defaultFg);
             }
 
             int drawStart = Math.Max(cursor, spanStart);
@@ -926,7 +947,7 @@ public sealed class EditorSurface : Control
                 string fragment = expanded.Substring(drawStart, drawEnd - drawStart);
                 int x = DisplayX(expanded, segStart, drawStart) + TextLeftPadding;
                 Color fg = spanFg != Color.Empty ? spanFg : defaultFg;
-                TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), fg, DrawFlags);
+                DrawTextAligned(g, fragment, _editorFont, x, y, fg);
             }
 
             cursor = Math.Max(cursor, spanEnd);
@@ -936,7 +957,7 @@ public sealed class EditorSurface : Control
         {
             string fragment = expanded.Substring(cursor, segEnd - cursor);
             int x = DisplayX(expanded, segStart, cursor) + TextLeftPadding;
-            TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), defaultFg, DrawFlags);
+            DrawTextAligned(g, fragment, _editorFont, x, y, defaultFg);
         }
     }
 
@@ -949,7 +970,7 @@ public sealed class EditorSurface : Control
         string fragment = expanded.Substring(colStart, drawEnd - colStart);
         int x = DisplayX(expanded, hOffset, colStart) + TextLeftPadding;
 
-        TextRenderer.DrawText(g, fragment, _editorFont, new Point(x, y), fgColor, DrawFlags);
+        DrawTextAligned(g, fragment, _editorFont, x, y, fgColor);
     }
 
     private void RenderSelectionBackground(Graphics g, string lineText, long lineStartOffset, int y, int hOffset, Brush selBrush)
@@ -1126,8 +1147,7 @@ public sealed class EditorSurface : Control
             int x = DisplayX(expanded, segStart, drawStart) + TextLeftPadding;
             Color color = _theme.GetTokenColor(token.Type);
 
-            TextRenderer.DrawText(g, fragment, _editorFont,
-                new Point(x, y), color, DrawFlags);
+            DrawTextAligned(g, fragment, _editorFont, x, y, color);
         }
     }
 
@@ -1795,6 +1815,85 @@ public sealed class EditorSurface : Control
         return expanded.Length;
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    //  Emoji-aware text rendering
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns true if the string contains emoji or zero-width characters
+    /// that require per-character rendering for correct cursor alignment.
+    /// </summary>
+    /// <summary>
+    /// Returns true if <paramref name="text"/> contains any character that
+    /// requires per-character rendering: wide CJK/emoji characters, zero-width
+    /// combining/modifier chars, or supplementary-plane characters. GDI's batch
+    /// TextRenderer.DrawText uses its own internal advance widths which drift
+    /// from our per-character calculations on mixed-width lines.
+    /// </summary>
+    private static bool ContainsWideOrSpecialChars(string text)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c < 0x0300) continue; // ASCII / Latin fast path
+
+            // Emoji-related zero-width characters.
+            if (c == '\u200D' || c == '\uFE0F' || c == '\uFE0E' ||
+                c == '\u200B' || c == '\u200C' || c == '\u2060' ||
+                c == '\u20E3') return true;
+
+            // Any wide character (CJK, emoji, supplementary) → per-char rendering.
+            if (GetCharDisplayWidth(text, i) >= 2) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Renders text with per-character positioning when emoji are present,
+    /// so each character is placed at exactly its calculated pixel offset.
+    /// Falls back to standard <see cref="TextRenderer.DrawText"/> for
+    /// pure ASCII/CJK text where GDI positioning is consistent.
+    /// </summary>
+    private void DrawTextAligned(Graphics g, string text, Font font, int x, int y, Color color)
+    {
+        if (!ContainsWideOrSpecialChars(text))
+        {
+            TextRenderer.DrawText(g, text, font, new Point(x, y), color, DrawFlags);
+            return;
+        }
+
+        int px = x;
+        for (int i = 0; i < text.Length; i++)
+        {
+            int w = GetCharDisplayWidth(text, i);
+            if (w == 0) continue;
+            int charPx = CharPixelWidth(text, i, w);
+            int len = (char.IsHighSurrogate(text[i]) && i + 1 < text.Length &&
+                       char.IsLowSurrogate(text[i + 1])) ? 2 : 1;
+
+            // Collect following zero-width characters (skin tone modifiers,
+            // ZWJ, variation selectors) into the same render unit so GDI
+            // can compose them into a single glyph (e.g. 👍 + 🏽 → 👍🏽).
+            while (i + len < text.Length)
+            {
+                int nextW = GetCharDisplayWidth(text, i + len);
+                if (nextW != 0) break;
+                if (char.IsHighSurrogate(text[i + len]) && i + len + 1 < text.Length &&
+                    char.IsLowSurrogate(text[i + len + 1]))
+                    len += 2; // supplementary zero-width char (e.g. skin tone modifier)
+                else
+                    len += 1; // BMP zero-width char (e.g. ZWJ, VS16)
+            }
+
+            // Keycap sequences (digit + FE0F + 20E3) need the Segoe UI Emoji font
+            // because GDI's per-char font fallback can't compose the combining mark.
+            Font renderFont = (IsKeycapBase(text[i]) && HasKeycapSuffix(text, i + 1) && _emojiFallbackFont is not null)
+                ? _emojiFallbackFont : font;
+            TextRenderer.DrawText(g, text.Substring(i, len), renderFont, new Point(px, y), color, DrawFlags);
+            px += charPx;
+        }
+    }
+
     /// <summary>
     /// Returns the pixel width for a character at <paramref name="index"/> in
     /// <paramref name="text"/>, using the correct measured width for narrow,
@@ -1803,9 +1902,24 @@ public sealed class EditorSurface : Control
     private int CharPixelWidth(string text, int index, int displayWidth)
     {
         if (displayWidth <= 1) return _charWidth;
-        // Supplementary plane (surrogate pair) — use separately measured width.
-        if (char.IsHighSurrogate(text[index]))
+
+        char c = text[index];
+        if (char.IsHighSurrogate(c))
+        {
+            // Supplementary plane: distinguish CJK vs emoji for correct fallback font width.
+            if (index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+            {
+                int cp = char.ConvertToUtf32(c, text[index + 1]);
+                if (cp >= 0x1F1E0 && cp <= 0x1FAFF)
+                    return _suppEmojiCharWidth;
+            }
             return _suppCjkCharWidth;
+        }
+
+        // BMP emoji uses separately measured width (also keycap sequences).
+        if (IsDefaultEmojiPresentation(c) || IsKeycapBase(c))
+            return _bmpEmojiCharWidth;
+
         return _cjkCharWidth;
     }
 
@@ -1816,12 +1930,32 @@ public sealed class EditorSurface : Control
     /// </summary>
     internal static int GetCharDisplayWidth(char c)
     {
-        // Fast path: ASCII and most Latin/Cyrillic/Greek characters.
+        // Fast path: ASCII + Latin-1 Supplement + Latin Extended-A/B.
+        if (c < 0x0300) return 1;
+
+        // Combining diacritical marks — zero width (accents, Zalgo text, etc.)
+        if (c <= 0x036F) return 0;                               // U+0300–U+036F Combining Diacritical Marks
+        if (c >= 0x0483 && c <= 0x0489) return 0;                // Combining Cyrillic
+
+        // Rest of BMP below CJK/wide ranges.
         if (c < 0x1100) return 1;
 
         // Low surrogate of a pair — caller should use the string overload instead.
         // Return 0 so it doesn't add extra width when encountered alone.
         if (char.IsLowSurrogate(c)) return 0;
+
+        // Zero-width characters: ZWJ, variation selectors, etc.
+        if (c == '\u200B' || c == '\u200C' || c == '\u200D' ||  // ZWS, ZWNJ, ZWJ
+            c == '\uFE0E' || c == '\uFE0F' ||                   // variation selectors
+            c == '\u2060' || c == '\uFEFF' ||                    // word joiner, BOM
+            c == '\u20E3')                                       // combining enclosing keycap
+            return 0;
+
+        // Combining mark ranges above U+1100.
+        if (c >= 0x1AB0 && c <= 0x1AFF) return 0;               // Combining Diacritical Marks Extended
+        if (c >= 0x1DC0 && c <= 0x1DFF) return 0;               // Combining Diacritical Marks Supplement
+        if (c >= 0x20D0 && c <= 0x20FF) return 0;               // Combining Diacritical Marks for Symbols
+        if (c >= 0xFE20 && c <= 0xFE2F) return 0;               // Combining Half Marks
 
         // East Asian Fullwidth and Wide character ranges.
         // Based on Unicode East Asian Width property (UAX #11).
@@ -1837,9 +1971,13 @@ public sealed class EditorSurface : Control
         if (c >= 0xFF01 && c <= 0xFF60) return 2; // Fullwidth Latin, Halfwidth CJK punctuation
         if (c >= 0xFFE0 && c <= 0xFFE6) return 2; // Fullwidth signs (¢, £, ¥, etc.)
 
+        // BMP characters with default emoji presentation (Emoji_Presentation=Yes).
+        // GDI renders these via Segoe UI Symbol at wider-than-_charWidth advance.
+        if (IsDefaultEmojiPresentation(c)) return 2;
+
         // High surrogate — can't determine width without the low surrogate.
         // Callers iterating strings should use GetCharDisplayWidth(string, int).
-        if (char.IsHighSurrogate(c)) return 2; // Assume wide (most supplementary CJK are)
+        if (char.IsHighSurrogate(c)) return 2; // Assume wide (most supplementary CJK/emoji are)
 
         return 1;
     }
@@ -1857,12 +1995,22 @@ public sealed class EditorSurface : Control
         if (char.IsLowSurrogate(c)) return 0;
 
         if (!char.IsHighSurrogate(c))
+        {
+            // Keycap sequence: digit/# /* + (optional FE0F) + U+20E3 → wide emoji.
+            if (IsKeycapBase(c) && HasKeycapSuffix(text, index + 1))
+                return 2;
             return GetCharDisplayWidth(c);
+        }
 
         // Surrogate pair → decode full code point.
         if (index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
         {
             int cp = char.ConvertToUtf32(c, text[index + 1]);
+
+            // Second Regional Indicator in a flag pair → zero width.
+            if (cp >= 0x1F1E0 && cp <= 0x1F1FF && IsSecondRegionalIndicator(text, index))
+                return 0;
+
             return GetCodePointDisplayWidth(cp);
         }
 
@@ -1879,6 +2027,17 @@ public sealed class EditorSurface : Control
         if (codePoint <= 0xFFFF)
             return GetCharDisplayWidth((char)codePoint);
 
+        // Skin tone modifiers — zero-width, they modify the preceding emoji.
+        if (codePoint >= 0x1F3FB && codePoint <= 0x1F3FF) return 0;
+
+        // Emoji ranges in supplementary planes.
+        if (codePoint >= 0x1F1E0 && codePoint <= 0x1F1FF) return 2; // Regional Indicator Symbols (flags)
+        if (codePoint >= 0x1F300 && codePoint <= 0x1F5FF) return 2; // Misc Symbols and Pictographs
+        if (codePoint >= 0x1F600 && codePoint <= 0x1F64F) return 2; // Emoticons
+        if (codePoint >= 0x1F680 && codePoint <= 0x1F6FF) return 2; // Transport and Map Symbols
+        if (codePoint >= 0x1F900 && codePoint <= 0x1F9FF) return 2; // Supplemental Symbols and Pictographs
+        if (codePoint >= 0x1FA70 && codePoint <= 0x1FAFF) return 2; // Symbols and Pictographs Extended-A
+
         // Supplementary CJK / East Asian wide ranges (UAX #11).
         if (codePoint >= 0x20000 && codePoint <= 0x2A6DF) return 2; // CJK Unified Ideographs Extension B
         if (codePoint >= 0x2A700 && codePoint <= 0x2B73F) return 2; // Extension C
@@ -1893,6 +2052,86 @@ public sealed class EditorSurface : Control
         return 1;
     }
 
+    /// <summary>
+    /// Returns true if the BMP character has default emoji presentation
+    /// (Emoji_Presentation=Yes in Unicode), meaning it renders as a wide
+    /// emoji glyph even without a trailing U+FE0F variation selector.
+    /// </summary>
+    private static bool IsDefaultEmojiPresentation(char c)
+    {
+        return c switch
+        {
+            '\u231A' or '\u231B' => true,
+            >= '\u23E9' and <= '\u23F3' => true,
+            >= '\u23F8' and <= '\u23FA' => true,
+            >= '\u25FD' and <= '\u25FE' => true,
+            >= '\u2614' and <= '\u2615' => true,
+            >= '\u2648' and <= '\u2653' => true,
+            '\u267F' or '\u2693' or '\u26A1' => true,
+            >= '\u26AA' and <= '\u26AB' => true,
+            >= '\u26BD' and <= '\u26BE' => true,
+            >= '\u26C4' and <= '\u26C5' => true,
+            '\u26CE' or '\u26D4' or '\u26EA' => true,
+            >= '\u26F2' and <= '\u26F3' => true,
+            '\u26F5' or '\u26FA' or '\u26FD' => true,
+            '\u2702' or '\u2705' => true,
+            >= '\u2708' and <= '\u270D' => true,
+            '\u270F' or '\u2712' or '\u2714' or '\u2716' => true,
+            '\u271D' or '\u2721' or '\u2728' => true,
+            >= '\u2733' and <= '\u2734' => true,
+            '\u2744' or '\u2747' or '\u274C' or '\u274E' => true,
+            >= '\u2753' and <= '\u2755' => true,
+            '\u2757' => true,
+            >= '\u2763' and <= '\u2764' => true,
+            >= '\u2795' and <= '\u2797' => true,
+            '\u27A1' or '\u27B0' or '\u27BF' => true,
+            >= '\u2934' and <= '\u2935' => true,
+            >= '\u2B05' and <= '\u2B07' => true,
+            >= '\u2B1B' and <= '\u2B1C' => true,
+            '\u2B50' or '\u2B55' => true,
+            '\u3030' or '\u303D' or '\u3297' or '\u3299' => true,
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Returns true if the Regional Indicator surrogate pair at <paramref name="index"/>
+    /// is the second in a flag pair (e.g. 🇧 in 🇬🇧), by counting consecutive
+    /// preceding Regional Indicators.
+    /// </summary>
+    private static bool IsSecondRegionalIndicator(string text, int index)
+    {
+        int riCount = 0;
+        int j = index;
+        while (j >= 2)
+        {
+            j -= 2;
+            if (!char.IsHighSurrogate(text[j]) || !char.IsLowSurrogate(text[j + 1])) break;
+            int prevCp = char.ConvertToUtf32(text[j], text[j + 1]);
+            if (prevCp < 0x1F1E0 || prevCp > 0x1F1FF) break;
+            riCount++;
+        }
+        return riCount % 2 == 1;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="c"/> is a valid keycap base character
+    /// (0-9, #, *) that can form a keycap emoji sequence with U+FE0F + U+20E3.
+    /// </summary>
+    private static bool IsKeycapBase(char c) =>
+        (c >= '0' && c <= '9') || c == '#' || c == '*';
+
+    /// <summary>
+    /// Returns true if the text starting at <paramref name="i"/> contains
+    /// an optional U+FE0F followed by U+20E3 (combining enclosing keycap).
+    /// </summary>
+    private static bool HasKeycapSuffix(string text, int i)
+    {
+        if (i >= text.Length) return false;
+        if (text[i] == '\uFE0F') i++;
+        return i < text.Length && text[i] == '\u20E3';
+    }
+
     // ────────────────────────────────────────────────────────────────────
     //  Cleanup
     // ────────────────────────────────────────────────────────────────────
@@ -1902,6 +2141,7 @@ public sealed class EditorSurface : Control
         if (disposing)
         {
             _editorFont.Dispose();
+            _emojiFallbackFont?.Dispose();
         }
 
         base.Dispose(disposing);
