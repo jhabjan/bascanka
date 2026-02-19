@@ -152,7 +152,7 @@ public sealed class EditorSurface : Control
     /// The maximum number of expanded columns that fit in the viewport.
     /// Used by word wrap to determine where to break lines.
     /// </summary>
-    internal int WrapColumns => _charWidth > 0 ? Math.Max(20, ClientSize.Width / _charWidth) : 80;
+    internal int WrapColumns => _charWidth > 0 ? Math.Max(20, (ClientSize.Width - TextLeftPadding) / _charWidth) : 80;
 
     /// <summary>
     /// Returns the number of visual rows a document line occupies when word wrap is enabled.
@@ -577,6 +577,10 @@ public sealed class EditorSurface : Control
                     int origSegLen = segLen;
                     RenderWrapSelectionBackground(g, lineStartOffset, lineText, expanded,
                         segStart, origSegStart, origSegLen, y, selBrush);
+
+                    // Column selection for this wrap segment.
+                    RenderColumnSelectionBackgroundWrap(g, docLine,
+                        origSegStart, segLen, y, selBrush);
 
                     // Text rendering.
                     if (segLen > 0)
@@ -1008,24 +1012,47 @@ public sealed class EditorSurface : Control
         if (_selection is null || !_selection.HasColumnSelection) return;
         if (docLine < _selection.ColumnStartLine || docLine > _selection.ColumnEndLine) return;
 
-        // Column selection stores visual (expanded) columns directly.
-        // Columns may extend past the text length (virtual space for box selection).
+        // Column selection stores *visual* columns (narrow=1, wide=2, zero-width=0).
+        // Use uniform _charWidth per visual column so the rectangle is perfectly
+        // rectangular across all lines, regardless of character composition.
+        int leftVisCol = (int)_selection.ColumnLeftCol;
+        int rightVisCol = (int)_selection.ColumnRightCol;
+
+        // Convert horizontal scroll offset (char index) to visual column.
         string expanded = ExpandTabs(lineText);
-        int leftCol = (int)_selection.ColumnLeftCol;
-        int rightCol = (int)_selection.ColumnRightCol;
-        int textLen = expanded.Length;
+        int scrollVisCol = (hOffset <= 0) ? 0
+            : CharIndexToVisualColumn(expanded, Math.Min(hOffset, expanded.Length));
 
-        int x1px = DisplayX(expanded, hOffset, Math.Min(leftCol, textLen));
-        if (leftCol > textLen) x1px += (leftCol - textLen) * _charWidth;
-
-        int x2px = DisplayX(expanded, hOffset, Math.Min(rightCol, textLen));
-        if (rightCol > textLen) x2px += (rightCol - textLen) * _charWidth;
+        int x1px = (leftVisCol - scrollVisCol) * _charWidth;
+        int x2px = (rightVisCol - scrollVisCol) * _charWidth;
 
         int x1 = Math.Max(0, x1px) + TextLeftPadding;
         int x2 = Math.Max(x1, x2px + TextLeftPadding);
 
         if (x2 > x1)
             g.FillRectangle(selBrush, x1, y, x2 - x1, _lineHeight);
+    }
+
+    private void RenderColumnSelectionBackgroundWrap(Graphics g,
+        long docLine, int segStartExpanded, int segLen, int y, Brush selBrush)
+    {
+        if (_selection is null || !_selection.HasColumnSelection) return;
+        if (docLine < _selection.ColumnStartLine || docLine > _selection.ColumnEndLine) return;
+
+        // Column selection stores *absolute* expanded columns from line start.
+        // The wrap segment covers absolute columns [segStartExpanded, segStartExpanded + segLen).
+        // Intersect the selection range with the segment range.
+        int leftVisCol = (int)_selection.ColumnLeftCol;
+        int rightVisCol = (int)_selection.ColumnRightCol;
+
+        int selLeft = Math.Max(leftVisCol, segStartExpanded);
+        int selRight = Math.Min(rightVisCol, segStartExpanded + segLen);
+        if (selRight <= selLeft) return;
+
+        // Convert absolute columns to pixel positions relative to the segment start.
+        int x1 = (selLeft - segStartExpanded) * _charWidth + TextLeftPadding;
+        int x2 = (selRight - segStartExpanded) * _charWidth + TextLeftPadding;
+        g.FillRectangle(selBrush, x1, y, x2 - x1, _lineHeight);
     }
 
     private void RenderMatchHighlights(Graphics g, string lineText, int y, int hOffset, Brush matchBrush)
@@ -1485,7 +1512,7 @@ public sealed class EditorSurface : Control
         else
         {
             // Single click.
-            if ((ModifierKeys & Keys.Alt) != 0 && !_wordWrap)
+            if ((ModifierKeys & Keys.Alt) != 0)
             {
                 // Alt+click starts column (box) selection using visual columns.
                 var (line, expCol) = HitTestLineExpandedColumn(e.X, e.Y);
@@ -1683,7 +1710,7 @@ public sealed class EditorSurface : Control
             {
                 int wrapRow = startRow + (targetRow - visualRow);
                 int segStart = wrapRow * wrapCols;
-                int expandedCol = segStart + CharIndexFromPixel(lineText, segStart, Math.Max(0, x - TextLeftPadding));
+                int expandedCol = CharIndexFromPixel(lineText, segStart, Math.Max(0, x - TextLeftPadding));
                 expandedCol = Math.Min(expandedCol, lineLen);
                 int col = CompressedColumn(lineText, expandedCol);
                 return (docLine, col);
@@ -1715,34 +1742,45 @@ public sealed class EditorSurface : Control
         long visibleLine = firstVisible + lineIndex;
 
         long docLine;
-        if (_folding is not null)
+        int wrapRowInLine = 0;
+
+        if (_wordWrap)
+        {
+            var (dl, wro) = WrapRowToDocumentLine(visibleLine);
+            docLine = dl;
+            wrapRowInLine = wro;
+        }
+        else if (_folding is not null)
             docLine = _folding.VisibleLineToDocumentLine(visibleLine);
         else
             docLine = visibleLine;
 
         docLine = Math.Clamp(docLine, 0, _document.LineCount - 1);
 
-        string lineText = _document.GetLine(docLine);
-        string expanded = ExpandTabs(lineText);
         int pixelX = Math.Max(0, x - TextLeftPadding);
 
-        // Allow column positions past the end of text (needed for column/box selection).
-        int textEndPx = DisplayX(expanded, hOffset, expanded.Length);
-        int expandedCol;
-        if (hOffset >= expanded.Length)
+        if (_wordWrap)
         {
-            expandedCol = hOffset + (pixelX + _charWidth / 2) / _charWidth;
-        }
-        else if (pixelX >= textEndPx)
-        {
-            expandedCol = expanded.Length + (pixelX - textEndPx + _charWidth / 2) / _charWidth;
-        }
-        else
-        {
-            expandedCol = CharIndexFromPixel(expanded, hOffset, pixelX);
+            // Column (box) selection stores *absolute* expanded columns measured
+            // from the start of the document line.  The pixel position gives us
+            // the column within the current wrap row; add the wrap-row offset so
+            // the result is absolute.
+            int expandedCol = (pixelX + _charWidth / 2) / _charWidth;
+            expandedCol += wrapRowInLine * WrapColumns;
+            return (docLine, expandedCol);
         }
 
-        return (docLine, expandedCol);
+        string lineText = _document.GetLine(docLine);
+        string expanded = ExpandTabs(lineText);
+
+        // Compute visual column using a uniform _charWidth grid.
+        // This ensures the same pixel position gives the same visual column
+        // on every line, making the column selection perfectly rectangular.
+        int scrollVisCol = (hOffset <= 0) ? 0
+            : CharIndexToVisualColumn(expanded, Math.Min(hOffset, expanded.Length));
+        int expandedColNoWrap = scrollVisCol + (pixelX + _charWidth / 2) / _charWidth;
+
+        return (docLine, expandedColNoWrap);
     }
 
     /// <summary>
@@ -1811,6 +1849,34 @@ public sealed class EditorSurface : Control
             if (accumulated + charPx / 2 > pixelX)
                 return i;
             accumulated += charPx;
+        }
+        return expanded.Length;
+    }
+
+    /// <summary>
+    /// Converts a character index in tab-expanded text to a visual column count,
+    /// where narrow chars = 1, wide (CJK/emoji) = 2, zero-width = 0.
+    /// </summary>
+    internal static int CharIndexToVisualColumn(string expanded, int charIndex)
+    {
+        int vc = 0;
+        int end = Math.Min(charIndex, expanded.Length);
+        for (int i = 0; i < end; i++)
+            vc += GetCharDisplayWidth(expanded, i);
+        return vc;
+    }
+
+    /// <summary>
+    /// Converts a visual column count back to a character index in tab-expanded text.
+    /// </summary>
+    internal static int VisualColumnToCharIndex(string expanded, int visualCol)
+    {
+        int vc = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            if (char.IsLowSurrogate(expanded[i])) continue;
+            if (vc >= visualCol) return i;
+            vc += GetCharDisplayWidth(expanded, i);
         }
         return expanded.Length;
     }

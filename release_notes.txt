@@ -1,4 +1,14 @@
-﻿v.1.0.3.		2025-02-18
+﻿v.1.0.4.		????-??-??
+--------------------------
+- fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
+- fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.
+- fixed word wrap cursor mavigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
+- fixed a bug where custom highlighting profiles assigned via Language > Custom Highlighting were not restored when reopening the application.
+- word wrap is now saved per tab, so each document remembers its own setting across restarts and crashes, with new documents defaulting to the last-used state.
+- open recent files menu now displays recent files in a cleaner two-column format.
+- added move up and move down buttons for reordering custom highlighting profiles.
+
+v.1.0.3.		2025-02-18
 --------------------------
 - implemented embedded terminal (cmd.exe) to the bottom panel using the Windows ConPTY API.
 - added close/crash unsaved changes recovery with periodic automatic back-ups to "%AppData%\Bascanka\recovery" - small/untitled files are backed up in full size as UTF-8, while large memory-mapped files use efficient binary delta/changes-only save format.

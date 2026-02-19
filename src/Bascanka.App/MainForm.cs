@@ -311,6 +311,8 @@ public sealed class MainForm : Form
         var pieceTable = new PieceTable(string.Empty);
         var editor = new EditorControl(pieceTable);
         editor.Theme = ThemeManager.Instance.CurrentTheme;
+        if (EditorControl.DefaultWordWrap)
+            editor.WordWrap = true;
         WireEditorEvents(editor);
 
         var tab = new TabInfo
@@ -1337,6 +1339,7 @@ public sealed class MainForm : Form
         EditorControl.DefaultTabWidth = SettingsManager.GetInt(SettingsManager.KeyTabWidth, 4);
         EditorControl.DefaultScrollSpeed = SettingsManager.GetInt(SettingsManager.KeyScrollSpeed, 3);
         EditorControl.DefaultAutoIndent = SettingsManager.GetBool(SettingsManager.KeyAutoIndent, true);
+        EditorControl.DefaultWordWrap = SettingsManager.GetBool(SettingsManager.KeyWordWrap, false);
         EditorControl.DefaultCaretScrollBuffer = SettingsManager.GetInt(SettingsManager.KeyCaretScrollBuffer, 4);
 
         // Display
@@ -1750,7 +1753,7 @@ public sealed class MainForm : Form
     /// Creates a lightweight placeholder tab for session restore.
     /// The file is not loaded until the tab is activated.
     /// </summary>
-    public void AddDeferredTab(string path, int zoom, int scroll, int caret)
+    public void AddDeferredTab(string path, int zoom, int scroll, int caret, bool wordWrap = false)
     {
         var editor = new EditorControl();
         editor.Theme = ThemeManager.Instance.CurrentTheme;
@@ -1765,6 +1768,7 @@ public sealed class MainForm : Form
             PendingZoom = zoom,
             PendingScroll = scroll,
             PendingCaret = caret,
+            PendingWordWrap = wordWrap ? true : null,
         };
 
         _tabs.Add(tab);
@@ -1801,7 +1805,8 @@ public sealed class MainForm : Form
         string addBuffer, IReadOnlyList<Piece> pieces,
         int codePage, bool hasBom, string? lineEnding, string? language,
         long savedCaret, int savedScroll, int savedZoom,
-        Guid? recoveryTabId = null)
+        Guid? recoveryTabId = null, bool wordWrap = false,
+        string? customProfileName = null)
     {
         // 1. Create tab immediately with an empty document + read-only.
         var editor = new EditorControl(new PieceTable(string.Empty));
@@ -1935,9 +1940,21 @@ public sealed class MainForm : Form
 
             if (savedZoom != 0)
                 tab.Editor.ZoomLevel = savedZoom;
+            if (wordWrap)
+                tab.Editor.WordWrap = true;
 
-            if (lexer is not null)
+            if (!string.IsNullOrEmpty(customProfileName))
+            {
+                var profile = _customHighlightStore.FindByName(customProfileName);
+                if (profile is not null)
+                    tab.Editor.SetCustomHighlighting(profile);
+                else if (lexer is not null)
+                    tab.Editor.SetLexer(lexer);
+            }
+            else if (lexer is not null)
+            {
                 tab.Editor.SetLexer(lexer);
+            }
 
             RefreshTabDisplay(tab);
             UpdateTitleBar();
@@ -2022,11 +2039,34 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// Applies and clears pending zoom/scroll/caret state on a tab.
+    /// Applies and clears pending zoom/scroll/caret/language state on a tab.
     /// </summary>
-    private static void ApplyPendingTabState(TabInfo tab)
+    private void ApplyPendingTabState(TabInfo tab)
     {
-        if (tab.PendingZoom == 0 && tab.PendingScroll == 0 && tab.PendingCaret == 0)
+        // Apply pending language or custom highlight profile (overrides extension detection).
+        if (tab.PendingCustomProfileName is not null)
+        {
+            var profile = _customHighlightStore.FindByName(tab.PendingCustomProfileName);
+            if (profile is not null)
+                tab.Editor.SetCustomHighlighting(profile);
+            tab.PendingCustomProfileName = null;
+            tab.PendingLanguage = null;
+        }
+        else if (tab.PendingLanguage is not null)
+        {
+            if (string.Equals(tab.PendingLanguage, "plaintext", StringComparison.OrdinalIgnoreCase))
+                tab.Editor.SetLexer(null);
+            else
+            {
+                var lexer = LexerRegistry.Instance.GetLexerById(tab.PendingLanguage);
+                if (lexer is not null)
+                    tab.Editor.SetLexer(lexer);
+            }
+            tab.PendingLanguage = null;
+        }
+
+        if (tab.PendingZoom == 0 && tab.PendingScroll == 0 && tab.PendingCaret == 0
+            && tab.PendingWordWrap is null)
             return;
 
         if (tab.PendingZoom != 0)
@@ -2035,10 +2075,13 @@ public sealed class MainForm : Form
             tab.Editor.ScrollMgr.FirstVisibleLine = tab.PendingScroll;
         if (tab.PendingCaret > 0 && tab.PendingCaret <= tab.Editor.GetBufferLength())
             tab.Editor.CaretOffset = tab.PendingCaret;
+        if (tab.PendingWordWrap == true)
+            tab.Editor.WordWrap = true;
 
         tab.PendingZoom = 0;
         tab.PendingScroll = 0;
         tab.PendingCaret = 0;
+        tab.PendingWordWrap = null;
     }
 
     /// <summary>

@@ -325,6 +325,9 @@ public sealed class SelectionManager
         {
             if (line >= document.LineCount) break;
             string lineText = document.GetLine(line);
+            // Strip trailing '\r' so column calculations are based on visible characters only.
+            if (lineText.Length > 0 && lineText[^1] == '\r')
+                lineText = lineText[..^1];
             int charLeft = CompressedColumnAt(lineText, leftExpCol, tabSize);
             int charRight = CompressedColumnAt(lineText, rightExpCol, tabSize);
             if (charRight > charLeft)
@@ -361,11 +364,12 @@ public sealed class SelectionManager
         int col = 0;
         for (int i = 0; i < lineText.Length; i++)
         {
+            if (char.IsLowSurrogate(lineText[i])) continue; // skip low surrogates
             if (col >= expandedCol) return i;
             if (lineText[i] == '\t')
                 col += tabSize - (col % tabSize);
             else
-                col++;
+                col += EditorSurface.GetCharDisplayWidth(lineText, i);
         }
         return lineText.Length;
     }

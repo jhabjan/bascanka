@@ -735,7 +735,9 @@ public sealed class PieceTable : IDisposable
             // line starts fall within [offset+1, offset+oldLength].
             long delEnd = offset + oldLength;
             // Binary search for first line start > offset.
-            long lo = 0, hi = _lineOffsetCacheValidCount - 1;
+            // Use hi = _lineOffsetCacheValidCount (exclusive) so the search
+            // correctly returns past-the-end when ALL entries are <= offset.
+            long lo = 0, hi = _lineOffsetCacheValidCount;
             while (lo < hi)
             {
                 long mid = lo + (hi - lo) / 2;
@@ -779,10 +781,13 @@ public sealed class PieceTable : IDisposable
             // the MemoryMappedFileSource's shared _lineOffsets array.
             if (charDelta != 0)
             {
-                if (_pendingDeltaLine >= 0 && startLine < _pendingDeltaLine)
+                if (_pendingDeltaLine >= 0 && startLine != _pendingDeltaLine)
                 {
-                    // New edit is before the existing delta boundary —
-                    // materialize the old delta into a new owned array first.
+                    // New edit is on a different line from the existing delta
+                    // boundary — materialize the old delta first.  A single
+                    // (line, amount) pair can only represent shifts for lines
+                    // after one boundary; mixing two different boundaries
+                    // would corrupt intermediate line offsets.
                     MaterializePendingDelta();
                 }
 
@@ -793,9 +798,12 @@ public sealed class PieceTable : IDisposable
                 }
                 else
                 {
-                    // Same or later line — widen the boundary and accumulate.
-                    _pendingDeltaLine = Math.Min(_pendingDeltaLine, startLine);
+                    // Same line — accumulate the shift.
                     _pendingDeltaAmount += charDelta;
+                    // If the net shift is zero, clear the pending state so it
+                    // doesn't interfere with future edits on different lines.
+                    if (_pendingDeltaAmount == 0)
+                        _pendingDeltaLine = -1;
                 }
             }
         }

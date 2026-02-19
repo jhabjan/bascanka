@@ -32,34 +32,27 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
             e.TextRectangle = tr;
         }
 
-        if (e.Item is RecentFileMenuItem rf && rf.FileNameColumnWidth > 0
+        if (e.Item is RecentFileMenuItem rf && rf.NameColumnWidth > 0
             && e.Text == e.Item.Text) // only for the main text pass, not shortcut
         {
-            Color dirColor = _theme.MenuForeground;
-            Color nameColor = AccentColor(dirColor);
+            Color dirColor = AccentColor(_theme.MenuForeground);
+            Color nameColor = _theme.MenuForeground;
 
             var flags = e.TextFormat | TextFormatFlags.NoPrefix;
             var g = e.Graphics;
             var font = e.TextFont ?? e.Item.Font;
-            var rect = tr;
 
             const int gap = 16;
-            int nameColW = rf.FileNameColumnWidth;
-            int dirColW = rect.Width - nameColW - gap;
 
-            // Directory on the left, middle-ellipsis if too long.
-            string dirText = dirColW > 0
-                ? TruncateMiddle(g, rf.DirPart,
-                    font, dirColW, flags)
-                : string.Empty;
+            // Filename column (left-aligned, fixed width).
+            var nameRect = new Rectangle(tr.X, tr.Y, rf.NameColumnWidth, tr.Height);
+            TextRenderer.DrawText(g, rf.DisplayName, font, nameRect, nameColor, flags);
 
-            var dirRect = new Rectangle(rect.X, rect.Y, dirColW, rect.Height);
-            TextRenderer.DrawText(g, dirText, font, dirRect, dirColor, flags);
-
-            // Filename on the right, left-aligned at a fixed column.
-            int nameX = rect.X + dirColW + gap;
-            var nameRect = new Rectangle(nameX, rect.Y, nameColW, rect.Height);
-            TextRenderer.DrawText(g, rf.FileName, font, nameRect, nameColor, flags);
+            // Directory column (left-aligned after filename column, smaller italic, dimmer).
+            int dirX = tr.X + rf.NameColumnWidth + gap;
+            var dirRect = new Rectangle(dirX, tr.Y, tr.Width - rf.NameColumnWidth - gap, tr.Height);
+            using var dirFont = new Font(font.FontFamily, font.Size * 0.9f, FontStyle.Italic, font.Unit);
+            TextRenderer.DrawText(g, rf.DisplayDir, dirFont, dirRect, dirColor, flags);
             return;
         }
 
@@ -77,42 +70,6 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
                 Math.Min(255, c.B + (int)((255 - c.B) * 0.55f)));
         else
             return Color.FromArgb(c.A, (int)(c.R * 0.5f), (int)(c.G * 0.5f), (int)(c.B * 0.5f));
-    }
-
-    private static string TruncateMiddle(Graphics g, string text, Font font,
-        int maxWidth, TextFormatFlags flags)
-    {
-        var big = new Size(int.MaxValue, int.MaxValue);
-        if (TextRenderer.MeasureText(g, text, font, big, flags).Width <= maxWidth)
-            return text;
-
-        const string ellipsis = "\u2026"; // …
-        int ellipsisW = TextRenderer.MeasureText(g, ellipsis, font, big, flags).Width;
-        int avail = maxWidth - ellipsisW;
-        if (avail <= 0) return ellipsis;
-
-        int halfAvail = avail / 2;
-
-        // Find how many chars fit from the start.
-        int leftLen = 0;
-        for (int i = 1; i <= text.Length; i++)
-        {
-            if (TextRenderer.MeasureText(g, text[..i], font, big, flags).Width > halfAvail)
-                break;
-            leftLen = i;
-        }
-
-        // Find how many chars fit from the end.
-        int rightLen = 0;
-        for (int i = text.Length - 1; i >= 0; i--)
-        {
-            if (TextRenderer.MeasureText(g, text[i..], font, big, flags).Width > halfAvail)
-                break;
-            rightLen = text.Length - i;
-        }
-
-        if (leftLen == 0 && rightLen == 0) return ellipsis;
-        return text[..leftLen] + ellipsis + text[^rightLen..];
     }
 
     protected override void Initialize(ToolStrip toolStrip)

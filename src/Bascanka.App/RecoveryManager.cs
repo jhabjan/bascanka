@@ -231,6 +231,12 @@ public sealed class RecoveryManager : IDisposable
                 entry["Caret"] = (long)tab.PendingCaret;
                 entry["Scroll"] = tab.PendingScroll;
                 entry["Zoom"] = tab.PendingZoom;
+                if (tab.PendingWordWrap == true)
+                    entry["WordWrap"] = 1;
+                if (tab.PendingLanguage is not null)
+                    entry["Language"] = tab.PendingLanguage;
+                if (tab.PendingCustomProfileName is not null)
+                    entry["CustomProfileName"] = tab.PendingCustomProfileName;
             }
             else
             {
@@ -239,6 +245,12 @@ public sealed class RecoveryManager : IDisposable
                 entry["Zoom"] = tab.Editor.ZoomLevel;
                 entry["Language"] = tab.Editor.Language;
                 entry["LineEnding"] = tab.Editor.LineEnding;
+                if (tab.Editor.WordWrap)
+                    entry["WordWrap"] = 1;
+
+                string? customProfile = tab.Editor.CustomProfileName;
+                if (customProfile is not null)
+                    entry["CustomProfileName"] = customProfile;
 
                 if (tab.Editor.EncodingManager is { } em)
                 {
@@ -407,7 +419,8 @@ public sealed class RecoveryManager : IDisposable
             int zoom = GetInt(tabEl, "Zoom", 0);
             int scroll = GetInt(tabEl, "Scroll", 0);
             long caret = GetLong(tabEl, "Caret", 0);
-            _form.AddDeferredTab(path, zoom, scroll, (int)Math.Min(caret, int.MaxValue));
+            bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
+            _form.AddDeferredTab(path, zoom, scroll, (int)Math.Min(caret, int.MaxValue), wordWrap);
             return true;
         }
 
@@ -419,9 +432,10 @@ public sealed class RecoveryManager : IDisposable
                 int zoom = GetInt(tabEl, "Zoom", 0);
                 int scroll = GetInt(tabEl, "Scroll", 0);
                 long caret = GetLong(tabEl, "Caret", 0);
+                bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
 
                 // Use deferred loading for non-active tabs.
-                _form.AddDeferredTab(path, zoom, scroll, (int)Math.Min(caret, int.MaxValue));
+                _form.AddDeferredTab(path, zoom, scroll, (int)Math.Min(caret, int.MaxValue), wordWrap);
                 return true;
             }
             return false;
@@ -480,26 +494,32 @@ public sealed class RecoveryManager : IDisposable
             if (!string.IsNullOrEmpty(lineEnding))
                 editor.LineEnding = lineEnding;
 
-            // Apply language/lexer.
+            // Apply language/lexer (skip if custom profile will be applied on activation).
             string? language = GetString(tabEl, "Language");
-            if (!string.IsNullOrEmpty(language))
+            string? customProfile = GetString(tabEl, "CustomProfileName");
+            if (string.IsNullOrEmpty(customProfile))
             {
-                var lexer = LexerRegistry.Instance.GetLexerById(language);
-                if (lexer is not null)
-                    editor.SetLexer(lexer);
-            }
-            else if (path is not null)
-            {
-                string ext = Path.GetExtension(path);
-                var lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
-                if (lexer is not null)
-                    editor.SetLexer(lexer);
+                if (!string.IsNullOrEmpty(language))
+                {
+                    var lexer = LexerRegistry.Instance.GetLexerById(language);
+                    if (lexer is not null)
+                        editor.SetLexer(lexer);
+                }
+                else if (path is not null)
+                {
+                    string ext = Path.GetExtension(path);
+                    var lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
+                    if (lexer is not null)
+                        editor.SetLexer(lexer);
+                }
             }
 
             // Set file size for the status bar from recovered content.
             var sizeEnc = editor.EncodingManager?.CurrentEncoding
                 ?? new UTF8Encoding(false);
             editor.FileSizeBytes = sizeEnc.GetByteCount(text);
+
+            bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
 
             _form.WireAndAddRecoveredTab(new TabInfo
             {
@@ -508,6 +528,8 @@ public sealed class RecoveryManager : IDisposable
                 FilePath = (path is not null && File.Exists(path)) ? path : null,
                 IsModified = true,
                 Editor = editor,
+                PendingWordWrap = wordWrap ? true : null,
+                PendingCustomProfileName = customProfile,
             },
             caret: GetLong(tabEl, "Caret", 0),
             scroll: GetInt(tabEl, "Scroll", 0),
@@ -563,15 +585,17 @@ public sealed class RecoveryManager : IDisposable
             bool hasBom = GetBool(tabEl, "HasBom");
             string? lineEnding = GetString(tabEl, "LineEnding");
             string? language = GetString(tabEl, "Language");
+            string? customProfile = GetString(tabEl, "CustomProfileName");
             long caret = GetLong(tabEl, "Caret", 0);
             int scroll = GetInt(tabEl, "Scroll", 0);
             int zoom = GetInt(tabEl, "Zoom", 0);
+            bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
 
             // Delegate to MainForm's async large-file recovery (same pattern as OpenLargeFile).
             _form.RestoreLargeFileFromRecovery(
                 path, fi.Length, addBuffer!, pieces,
                 codePage, hasBom, lineEnding, language,
-                caret, scroll, zoom, tabId);
+                caret, scroll, zoom, tabId, wordWrap, customProfile);
 
             return true;
         }

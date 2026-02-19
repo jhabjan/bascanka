@@ -44,6 +44,20 @@ public sealed class CaretManager : IDisposable
     public Func<long, long, long>? LineColumnToVisibleRow { get; set; }
 
     /// <summary>
+    /// When word-wrap is active, navigates caret up by visual wrap rows
+    /// instead of document lines. Parameters: (currentLine, currentColumn, desiredColumn).
+    /// Returns (newLine, newColumn), or null to fall back to default behavior.
+    /// </summary>
+    public Func<long, long, long, (long Line, long Column)?>? WrapMoveUp { get; set; }
+
+    /// <summary>
+    /// When word-wrap is active, navigates caret down by visual wrap rows
+    /// instead of document lines. Parameters: (currentLine, currentColumn, desiredColumn).
+    /// Returns (newLine, newColumn), or null to fall back to default behavior.
+    /// </summary>
+    public Func<long, long, long, (long Line, long Column)?>? WrapMoveDown { get; set; }
+
+    /// <summary>
     /// Maps (docLine, charColumn) to the expanded visual column, accounting
     /// for tabs and fullwidth (CJK) characters. Used by <see cref="EnsureVisible"/>
     /// for correct horizontal scrolling.
@@ -239,21 +253,39 @@ public sealed class CaretManager : IDisposable
     /// <summary>Moves the caret one line up, preserving the desired column.</summary>
     public void MoveUp()
     {
-        if (_document is null || _line == 0) return;
+        if (_document is null) return;
 
         if (_desiredColumn < 0) _desiredColumn = _column;
 
-        long newLine = _line - 1;
+        // Word-wrap: navigate by visual wrap rows.
+        if (WrapMoveUp is not null)
+        {
+            var result = WrapMoveUp(_line, _column, _desiredColumn);
+            if (result is not null)
+            {
+                var (newLine, newCol) = result.Value;
+                _line = newLine;
+                _column = newCol;
+                _offset = _document.LineColumnToOffset(newLine, newCol);
+                ResetBlink();
+                CaretMoved?.Invoke(_offset);
+                return;
+            }
+        }
 
-        if (Folding is not null && !Folding.IsLineVisible(newLine))
-            newLine = Folding.NextVisibleLine(newLine, _document.LineCount, forward: false);
+        if (_line == 0) return;
 
-        long lineLen = _document.GetLineLength(newLine);
+        long targetLine = _line - 1;
+
+        if (Folding is not null && !Folding.IsLineVisible(targetLine))
+            targetLine = Folding.NextVisibleLine(targetLine, _document.LineCount, forward: false);
+
+        long lineLen = _document.GetLineLength(targetLine);
         long col = Math.Min(_desiredColumn, lineLen);
 
-        _line = newLine;
+        _line = targetLine;
         _column = col;
-        _offset = _document.LineColumnToOffset(newLine, col);
+        _offset = _document.LineColumnToOffset(targetLine, col);
         ResetBlink();
         CaretMoved?.Invoke(_offset);
     }
@@ -261,23 +293,41 @@ public sealed class CaretManager : IDisposable
     /// <summary>Moves the caret one line down, preserving the desired column.</summary>
     public void MoveDown()
     {
-        if (_document is null || _line >= _document.LineCount - 1) return;
+        if (_document is null) return;
 
         if (_desiredColumn < 0) _desiredColumn = _column;
 
-        long newLine = _line + 1;
+        // Word-wrap: navigate by visual wrap rows.
+        if (WrapMoveDown is not null)
+        {
+            var result = WrapMoveDown(_line, _column, _desiredColumn);
+            if (result is not null)
+            {
+                var (newLine, newCol) = result.Value;
+                _line = newLine;
+                _column = newCol;
+                _offset = _document.LineColumnToOffset(newLine, newCol);
+                ResetBlink();
+                CaretMoved?.Invoke(_offset);
+                return;
+            }
+        }
 
-        if (Folding is not null && !Folding.IsLineVisible(newLine))
-            newLine = Folding.NextVisibleLine(newLine, _document.LineCount, forward: true);
+        if (_line >= _document.LineCount - 1) return;
 
-        if (newLine >= _document.LineCount) return;
+        long targetLine = _line + 1;
 
-        long lineLen = _document.GetLineLength(newLine);
+        if (Folding is not null && !Folding.IsLineVisible(targetLine))
+            targetLine = Folding.NextVisibleLine(targetLine, _document.LineCount, forward: true);
+
+        if (targetLine >= _document.LineCount) return;
+
+        long lineLen = _document.GetLineLength(targetLine);
         long col = Math.Min(_desiredColumn, lineLen);
 
-        _line = newLine;
+        _line = targetLine;
         _column = col;
-        _offset = _document.LineColumnToOffset(newLine, col);
+        _offset = _document.LineColumnToOffset(targetLine, col);
         ResetBlink();
         CaretMoved?.Invoke(_offset);
     }

@@ -69,6 +69,15 @@ public sealed class TabInfo
     /// <summary>Pending caret offset to apply after loading/activation.</summary>
     public long PendingCaret { get; set; }
 
+    /// <summary>Pending word-wrap state to apply after loading/activation.</summary>
+    public bool? PendingWordWrap { get; set; }
+
+    /// <summary>Pending language ID to apply after loading/activation (overrides extension detection).</summary>
+    public string? PendingLanguage { get; set; }
+
+    /// <summary>Pending custom highlight profile name to apply after loading/activation.</summary>
+    public string? PendingCustomProfileName { get; set; }
+
     /// <summary>
     /// True while the tab's file is being loaded asynchronously (e.g. large file
     /// incremental scan or recovery loading).  Saving is blocked while loading.

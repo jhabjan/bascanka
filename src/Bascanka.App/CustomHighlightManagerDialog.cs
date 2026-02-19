@@ -20,6 +20,8 @@ public sealed class CustomHighlightManagerDialog : Form
     private readonly TextBox _profileNameBox;
     private readonly Button _addProfileBtn;
     private readonly Button _deleteProfileBtn;
+    private readonly Button _moveProfileUpBtn;
+    private readonly Button _moveProfileDownBtn;
 
     // Right panel: rules grid.
     private readonly DataGridView _rulesGrid;
@@ -119,21 +121,40 @@ public sealed class CustomHighlightManagerDialog : Form
         };
         _profileList.SelectedIndexChanged += OnProfileSelected;
 
-        var profileBtnPanel = new FlowLayoutPanel
+        var profileBtnPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 36,
-            FlowDirection = FlowDirection.LeftToRight,
+            Height = 68,
+            ColumnCount = 2,
+            RowCount = 2,
             Padding = new Padding(0, 4, 0, 0),
         };
+        profileBtnPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        profileBtnPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        profileBtnPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        profileBtnPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
         _addProfileBtn = MakeButton(Strings.CustomHighlightAddProfile);
+        _addProfileBtn.Dock = DockStyle.Fill;
+        _addProfileBtn.AutoSize = false;
         _addProfileBtn.Click += OnAddProfile;
         _deleteProfileBtn = MakeButton(Strings.CustomHighlightDeleteProfile);
+        _deleteProfileBtn.Dock = DockStyle.Fill;
+        _deleteProfileBtn.AutoSize = false;
         _deleteProfileBtn.Click += OnDeleteProfile;
+        _moveProfileUpBtn = MakeButton("\u2191");
+        _moveProfileUpBtn.Dock = DockStyle.Fill;
+        _moveProfileUpBtn.AutoSize = false;
+        _moveProfileUpBtn.Click += OnMoveProfileUp;
+        _moveProfileDownBtn = MakeButton("\u2193");
+        _moveProfileDownBtn.Dock = DockStyle.Fill;
+        _moveProfileDownBtn.AutoSize = false;
+        _moveProfileDownBtn.Click += OnMoveProfileDown;
 
-        profileBtnPanel.Controls.Add(_addProfileBtn);
-        profileBtnPanel.Controls.Add(_deleteProfileBtn);
+        profileBtnPanel.Controls.Add(_addProfileBtn, 0, 0);
+        profileBtnPanel.Controls.Add(_deleteProfileBtn, 1, 0);
+        profileBtnPanel.Controls.Add(_moveProfileUpBtn, 0, 1);
+        profileBtnPanel.Controls.Add(_moveProfileDownBtn, 1, 1);
 
         var nameSpacer = new Panel { Dock = DockStyle.Top, Height = 6 };
 
@@ -425,6 +446,8 @@ public sealed class CustomHighlightManagerDialog : Form
         bool hasRule = hasProfile && _rulesGrid.CurrentRow is not null;
 
         _deleteProfileBtn.Enabled = hasProfile;
+        _moveProfileUpBtn.Enabled = hasProfile && _profileList.SelectedIndex > 0;
+        _moveProfileDownBtn.Enabled = hasProfile && _profileList.SelectedIndex < _profiles.Count - 1;
         _profileNameBox.Enabled = hasProfile;
         _exportBtn.Enabled = hasProfile;
         _addRuleBtn.Enabled = hasProfile;
@@ -473,6 +496,26 @@ public sealed class CustomHighlightManagerDialog : Form
         if (idx < 0 || idx >= _profiles.Count) return;
         _profiles.RemoveAt(idx);
         RefreshProfileList();
+    }
+
+    private void OnMoveProfileUp(object? sender, EventArgs e)
+    {
+        int idx = _profileList.SelectedIndex;
+        if (idx <= 0) return;
+        SyncRulesFromGrid();
+        (_profiles[idx - 1], _profiles[idx]) = (_profiles[idx], _profiles[idx - 1]);
+        RefreshProfileList();
+        _profileList.SelectedIndex = idx - 1;
+    }
+
+    private void OnMoveProfileDown(object? sender, EventArgs e)
+    {
+        int idx = _profileList.SelectedIndex;
+        if (idx < 0 || idx >= _profiles.Count - 1) return;
+        SyncRulesFromGrid();
+        (_profiles[idx], _profiles[idx + 1]) = (_profiles[idx + 1], _profiles[idx]);
+        RefreshProfileList();
+        _profileList.SelectedIndex = idx + 1;
     }
 
     private void OnAddRule(object? sender, EventArgs e)

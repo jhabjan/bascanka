@@ -108,20 +108,36 @@ public sealed class MenuBuilder
 
         if (separated)
         {
-            // Two-column layout: directory | filename.
+            // Measure the widest DisplayName and DisplayDir in pixels to
+            // build a Text string that auto-sizes the menu wide enough
+            // for the two-column layout drawn by ThemedMenuRenderer.
             var font = _recentFilesMenu.Font;
             var measureFlags = TextFormatFlags.NoPrefix;
+            var big = new Size(int.MaxValue, int.MaxValue);
             int maxNameW = 0;
+            int maxDirW = 0;
             foreach (var item in items)
             {
-                int w = TextRenderer.MeasureText(item.FileName, font, new Size(int.MaxValue, int.MaxValue), measureFlags).Width;
-                maxNameW = Math.Max(maxNameW, w);
+                maxNameW = Math.Max(maxNameW, TextRenderer.MeasureText(item.DisplayName, font, big, measureFlags).Width);
+                maxDirW = Math.Max(maxDirW, TextRenderer.MeasureText(item.DisplayDir, font, big, measureFlags).Width);
             }
-            const string columnGap = "      ";
+
+            // Must match the gap constant in ThemedMenuRenderer.OnRenderItemText.
+            const int rendererGap = 16;
+            int targetW = maxNameW + rendererGap + maxDirW;
+
+            // Measure space width for pixel-accurate padding.
+            int spaceW = Math.Max(1, TextRenderer.MeasureText("          ", font, big, measureFlags).Width / 10);
+
             foreach (var item in items)
             {
-                item.FileNameColumnWidth = maxNameW;
-                item.Text = item.DirPart + columnGap + item.FileName;
+                item.NameColumnWidth = maxNameW;
+                // Start with minimal gap, then add spaces until the measured
+                // Text width is at least targetW so the renderer has room.
+                string baseText = item.DisplayName + "  " + item.DisplayDir;
+                int baseW = TextRenderer.MeasureText(baseText, font, big, measureFlags).Width;
+                int extra = baseW < targetW ? (targetW - baseW + spaceW - 1) / spaceW : 0;
+                item.Text = item.DisplayName + new string(' ', 2 + extra) + item.DisplayDir;
                 _recentFilesMenu.DropDownItems.Add(item);
             }
         }
@@ -850,15 +866,28 @@ public sealed class MenuBuilder
 /// </summary>
 internal sealed class RecentFileMenuItem : ToolStripMenuItem
 {
-    public readonly string DirPart;
-    public readonly string FileName;
-    public int FileNameColumnWidth;
+    public readonly string DisplayName;
+    public readonly string DisplayDir;
+    public int NameColumnWidth;
+
+    private const int MaxChars = 100;
 
     public RecentFileMenuItem(string fullPath) : base(fullPath)
     {
-        FileName = Path.GetFileName(fullPath);
-        DirPart = fullPath.Length > FileName.Length
-            ? fullPath[..^FileName.Length]
+        string fileName = Path.GetFileName(fullPath);
+        string dirPart = fullPath.Length > fileName.Length
+            ? fullPath[..^fileName.Length]
             : string.Empty;
+        DisplayName = TruncateMiddle(fileName, MaxChars);
+        DisplayDir = TruncateMiddle(dirPart, MaxChars);
+    }
+
+    private static string TruncateMiddle(string text, int maxChars)
+    {
+        if (text.Length <= maxChars)
+            return text;
+
+        int half = (maxChars - 1) / 2; // -1 for the ellipsis character
+        return string.Concat(text.AsSpan(0, half), "\u2026", text.AsSpan(text.Length - half));
     }
 }

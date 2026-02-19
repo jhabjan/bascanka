@@ -43,12 +43,28 @@ public sealed class SessionManager
                     tabData["Caret"] = (int)Math.Min(tab.PendingCaret, int.MaxValue);
                     tabData["Scroll"] = tab.PendingScroll;
                     tabData["Zoom"] = tab.PendingZoom;
+                    if (tab.PendingWordWrap == true)
+                        tabData["WordWrap"] = 1;
+                    if (tab.PendingLanguage is not null)
+                        tabData["Language"] = tab.PendingLanguage;
+                    if (tab.PendingCustomProfileName is not null)
+                        tabData["CustomProfileName"] = tab.PendingCustomProfileName;
                 }
                 else
                 {
                     tabData["Caret"] = (int)Math.Min(tab.Editor.CaretOffset, int.MaxValue);
                     tabData["Scroll"] = (int)tab.Editor.ScrollMgr.FirstVisibleLine;
                     tabData["Zoom"] = tab.Editor.ZoomLevel;
+                    if (tab.Editor.WordWrap)
+                        tabData["WordWrap"] = 1;
+
+                    string lang = tab.Editor.Language;
+                    if (!string.IsNullOrEmpty(lang))
+                        tabData["Language"] = lang;
+
+                    string? customProfile = tab.Editor.CustomProfileName;
+                    if (customProfile is not null)
+                        tabData["CustomProfileName"] = customProfile;
                 }
 
                 int originalIndex = ((IList<Editor.Tabs.TabInfo>)form.Tabs).IndexOf(tab);
@@ -58,21 +74,25 @@ public sealed class SessionManager
                 tabs.Add(tabData);
             }
 
-            // ── Search history ────────────────────────────────────────
-            var history = Bascanka.Editor.Panels.FindReplacePanel.GetSearchHistory();
-
             // ── Build session object ──────────────────────────────────
             var session = new SortedDictionary<string, object>(StringComparer.Ordinal)
             {
-                ["ActiveTab"] = savedActiveIndex,
-                ["SearchHistory"] = history.ToArray(),
-                ["Tabs"] = tabs,
                 ["WindowHeight"] = bounds.Height,
                 ["WindowMaximized"] = maximized ? 1 : 0,
                 ["WindowWidth"] = bounds.Width,
                 ["WindowX"] = bounds.X,
                 ["WindowY"] = bounds.Y,
             };
+
+            if (tabs.Count > 0)
+            {
+                session["ActiveTab"] = savedActiveIndex;
+                session["Tabs"] = tabs;
+            }
+
+            var history = Bascanka.Editor.Panels.FindReplacePanel.GetSearchHistory();
+            if (history.Count > 0)
+                session["SearchHistory"] = history.ToArray();
 
             SettingsManager.SaveStructuredSession(session);
         }
@@ -218,6 +238,9 @@ public sealed class SessionManager
             int zoom = GetIntProp(tabEl, "Zoom", 0);
             int scroll = GetIntProp(tabEl, "Scroll", 0);
             int caret = GetIntProp(tabEl, "Caret", 0);
+            bool wordWrap = GetIntProp(tabEl, "WordWrap", 0) != 0;
+            string? language = GetStringProp(tabEl, "Language");
+            string? customProfile = GetStringProp(tabEl, "CustomProfileName");
 
             if (i == activeIndex)
             {
@@ -232,12 +255,20 @@ public sealed class SessionManager
                     tab.PendingZoom = zoom;
                     tab.PendingScroll = scroll;
                     tab.PendingCaret = caret;
+                    tab.PendingWordWrap = wordWrap ? true : null;
+                    tab.PendingLanguage = language;
+                    tab.PendingCustomProfileName = customProfile;
                 }
             }
             else
             {
                 // Defer loading for inactive tabs.
-                form.AddDeferredTab(path, zoom, scroll, caret);
+                form.AddDeferredTab(path, zoom, scroll, caret, wordWrap);
+
+                // Set pending language/custom profile on the deferred tab.
+                var tab = form.Tabs[form.Tabs.Count - 1];
+                tab.PendingLanguage = language;
+                tab.PendingCustomProfileName = customProfile;
             }
         }
 
