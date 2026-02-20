@@ -1,0 +1,1100 @@
+# MANUAL
+
+## Table of Contents
+
+- [File Operations](#file-operations)
+- [Tab Management](#tab-management)
+- [Editing](#editing)
+- [Selection Modes](#selection-modes)
+- [Undo / Redo](#undo--redo)
+- [Search & Replace](#search--replace)
+- [Sed Transform](#sed-transform)
+- [Text Transformations](#text-transformations)
+- [Syntax Highlighting](#syntax-highlighting)
+- [Custom Highlighting](#custom-highlighting)
+- [Code Folding](#code-folding)
+- [Symbol Navigation](#symbol-navigation)
+- [Bookmarks](#bookmarks)
+- [Diff / Compare](#diff--compare)
+- [Hex Editor](#hex-editor)
+- [Terminal](#terminal)
+- [Macros](#macros)
+- [Zoom](#zoom)
+- [Word Wrap](#word-wrap)
+- [Whitespace Display](#whitespace-display)
+- [Full Screen](#full-screen)
+- [Printing](#printing)
+- [Encoding & Line Endings](#encoding--line-endings)
+- [Themes](#themes)
+- [Localization](#localization)
+- [Settings](#settings)
+- [Session Management](#session-management)
+- [Recovery / Auto-Save](#recovery--auto-save)
+- [Large File Handling](#large-file-handling)
+- [Plugin System](#plugin-system)
+- [Command-Line Interface](#command-line-interface)
+- [Explorer Integration](#explorer-integration)
+- [Status Bar](#status-bar)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+
+---
+
+## File Operations
+
+### Opening Files
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| New | `Ctrl+N` | Create an empty untitled document |
+| Open | `Ctrl+O` | Open one or more files (multi-select) |
+| Open Recent | | MRU list of up to 20 files (configurable) |
+| Drag & Drop | | Drop files onto the window to open them |
+
+Files can also be opened from the command line or via single-instance IPC (double-clicking a file in Explorer when Bascanka is already running sends it to the existing instance).
+
+**Large files** (>10 MB by default) load asynchronously in the background using memory-mapped I/O, with a progress overlay and cancel button. The UI stays responsive.
+
+**Binary files** are detected automatically (first 8 KB scanned) and open directly in hex editor mode.
+
+**Admin elevation**: if a file cannot be opened due to permissions, Bascanka offers to restart as Administrator.
+
+### Saving Files
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Save | `Ctrl+S` | Save current document (prompts for path if untitled) |
+| Save As | `Ctrl+Shift+S` | Save to a new file path |
+| Save All | | Save all modified documents |
+
+Original encoding and line ending style are preserved on save. Large files show a per-tab progress bar during save, allowing you to continue working on other tabs.
+
+### File Watcher
+
+Open files are monitored for external changes. When a file is modified outside Bascanka, a prompt offers to reload or keep the local version.
+
+### Recent Files
+
+- Up to 20 most recently used files (configurable: 5-100)
+- File > Open Recent submenu
+- "Clear Recent Files" option
+- Stored in `%APPDATA%\Bascanka\recent.json`
+
+---
+
+## Tab Management
+
+Multiple documents open as tabs in a tab strip across the top of the window.
+
+### Tab Operations
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Next Tab | `Ctrl+Tab` | Switch to the next tab |
+| Previous Tab | `Ctrl+Shift+Tab` | Switch to the previous tab |
+| Close Tab | `Ctrl+W` | Close the current tab (prompts to save if modified) |
+
+### Tab Context Menu (Right-Click)
+
+- **Close** - close this tab
+- **Close Others** - close all tabs except this one
+- **Close All** - close all tabs
+- **Close to Right** - close tabs to the right
+- **Compare with** - compare this tab with another open tab
+- **Copy File Path** - copy full path to clipboard
+- **Open in Explorer** - reveal in Windows Explorer
+
+### Tab Features
+
+- Drag and drop to reorder tabs
+- Modified indicator (`*` after filename)
+- Untitled tabs named "Untitled 1", "Untitled 2", etc.
+- Each tab maintains independent zoom, scroll position, caret, selection, undo history, encoding, line ending, language, and custom highlight profile
+- **Deferred loading**: on session restore, only the active tab loads immediately; other tabs load when activated
+
+### Tab Appearance (Configurable)
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| Tab Height | 30 px | 20-60 |
+| Max Tab Width | 220 px | 100-500 |
+| Min Tab Width | 80 px | 40-200 |
+
+---
+
+## Editing
+
+### Basic Editing
+
+- Character-by-character insert and delete
+- Insert/Overwrite mode toggle (`Insert` key)
+- Auto-indent on Enter (copies leading whitespace from previous line)
+- Tab inserts spaces (width configurable, default 4)
+- CJK / fullwidth character support with correct cursor positioning
+
+### Line Operations
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Duplicate Line | `Ctrl+D` | Duplicate the current line below |
+| Delete Line | `Ctrl+L` or `Ctrl+Shift+K` | Delete the entire current line |
+| Move Line Up | `Alt+Up` | Swap the current line with the one above |
+| Move Line Down | `Alt+Down` | Swap the current line with the one below |
+| Copy Line Up | `Ctrl+Shift+Up` | Copy the current line above |
+| Copy Line Down | `Ctrl+Shift+Down` | Copy the current line below |
+| Indent | `Tab` (with selection) | Indent all selected lines |
+| Unindent | `Shift+Tab` | Unindent current line or selected lines |
+
+### Clipboard
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Cut | `Ctrl+X` | Cut selection to clipboard |
+| Copy | `Ctrl+C` | Copy selection to clipboard |
+| Paste | `Ctrl+V` | Paste from clipboard at caret |
+
+Column selection cut/copy produces tab-separated values; column paste inserts into each line of the column.
+
+### Context Menu (Right-Click on Text)
+
+- Undo, Redo, Cut, Copy, Paste, Delete, Select All
+- **Selected Text** submenu (when text is selected): Case conversion, Encoding, Sort, Trim, Reverse, and other transformations
+- **JSON** submenu: Format JSON, Minimize JSON (works on selection or entire document)
+
+---
+
+## Selection Modes
+
+### Standard Selection
+
+- `Shift+Arrow` keys to extend character/line at a time
+- `Ctrl+Shift+Arrow` to extend word at a time
+- `Shift+Home/End` to extend to line start/end
+- `Ctrl+Shift+Home/End` to extend to document start/end
+- `Shift+Page Up/Down` to extend by page
+- `Ctrl+A` to select all
+- Click and drag to select with the mouse
+- Double-click to select a word
+- Triple-click to select a line
+
+### Column (Box) Selection
+
+- `Alt+Click` and drag to start a rectangular column selection
+- `Alt+Shift+Arrow` keys to extend column selection
+- Typing inserts on each line of the column
+- Copy/paste preserves the rectangular shape
+
+---
+
+## Undo / Redo
+
+| Action | Shortcut |
+|--------|----------|
+| Undo | `Ctrl+Z` |
+| Redo | `Ctrl+Y` |
+
+- Unlimited undo/redo history
+- Consecutive character inserts and deletes auto-merge into a single undoable operation
+- Composite commands group multi-step operations (e.g. Replace All) into a single undo step
+- Save-point tracking drives the modified indicator (`*`) on tabs
+
+---
+
+## Search & Replace
+
+### Find Panel (`Ctrl+F`)
+
+Modeless panel anchored to the top-right of the editor (VS Code style).
+
+| Option | Description |
+|--------|-------------|
+| Match Case | Case-sensitive search |
+| Whole Word | Match whole words only |
+| Use Regex | Enable regular expression patterns |
+
+### Navigation
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Find Next | `F3` | Jump to next match |
+| Find Previous | `Shift+F3` | Jump to previous match |
+
+### Replace Panel (`Ctrl+H`)
+
+Same as Find, plus:
+
+| Action | Description |
+|--------|-------------|
+| Replace | Replace current match and advance |
+| Replace All | Replace all matches (with count) |
+
+Regex backreferences (`$1`, `$2`, etc.) are supported in the replacement string.
+
+### Bulk Operations
+
+| Action | Description |
+|--------|-------------|
+| Find All | List all matches in the current document (up to 100,000) |
+| Find in Tabs (`Ctrl+Shift+F`) | Search across all open documents |
+| Mark All | Highlight all matches in the viewport |
+| Count | Count occurrences without navigating |
+
+### Find Results Panel
+
+- Bottom panel with paginated results (1,000 per page)
+- Shows file path, line number, column, and matched text with context
+- Click a result to jump to it in the editor
+- "Open Results in New Tab" button
+
+### Performance
+
+- Hardware-accelerated literal search via vectorized `string.IndexOf` (~10x faster than regex)
+- 4 MB sliding-window search for large files
+- Background thread with progress indicator and cancel button
+- Incremental search as you type (300 ms debounce, configurable)
+- Search history: last 25 searches persisted (configurable)
+
+### Go to Line (`Ctrl+G`)
+
+Dialog to jump to a specific line number (1-based).
+
+---
+
+## Sed Transform
+
+Unix `sed`-style substitution with live preview. Available from Tools > Sed Transform.
+
+### Syntax
+
+```
+s/pattern/replacement/flags
+```
+
+| Part | Description |
+|------|-------------|
+| `pattern` | Regular expression to match |
+| `replacement` | Substitution text (`$1`, `$2` for capture groups) |
+| `flags` | `g` = all occurrences, `i` = ignore case |
+
+Any non-alphanumeric character can be used as delimiter instead of `/`.
+
+### Examples
+
+| Expression | Effect |
+|------------|--------|
+| `s/foo/bar/g` | Replace all "foo" with "bar" |
+| `s/error/warning/` | Replace first occurrence only |
+| `s/hello/world/gi` | Case-insensitive, all occurrences |
+| `s\|C:\\old\|C:\\new\|g` | Use `\|` as delimiter (handy for paths) |
+| `s/(\w+)@(\w+)/$2:$1/g` | Swap capture groups: `user@host` becomes `host:user` |
+| `s/^\s+//` | Remove leading whitespace |
+| `s/TODO(.*)/<b>TODO$1<\/b>/g` | Wrap TODO comments in HTML bold tags |
+
+### Workflow
+
+1. Enter expression in the dialog (real-time syntax colorization)
+2. Double-click an example to populate the input
+3. Click OK to open a preview tab showing the result
+4. Changed text is highlighted in the preview
+5. Click **Apply** to commit or **Discard** to cancel
+
+---
+
+## Text Transformations
+
+Available from the Text menu or the right-click Selected Text submenu. Most require a selection; JSON operations work on selection or entire document.
+
+### Case Conversion
+
+| Transformation | Example |
+|----------------|---------|
+| UPPERCASE | `hello world` -> `HELLO WORLD` |
+| lowercase | `Hello World` -> `hello world` |
+| Title Case | `hello world` -> `Hello World` |
+| sWAP cASE | `Hello World` -> `hELLO wORLD` |
+
+### Encoding / Decoding
+
+| Transformation | Example |
+|----------------|---------|
+| Base64 Encode | `Hello` -> `SGVsbG8=` |
+| Base64 Decode | `SGVsbG8=` -> `Hello` |
+| URL Encode | `hello world` -> `hello%20world` |
+| URL Decode | `hello%20world` -> `hello world` |
+| HTML Encode | `<div>` -> `&lt;div&gt;` |
+| HTML Decode | `&lt;div&gt;` -> `<div>` |
+
+### Line Operations
+
+| Transformation | Description |
+|----------------|-------------|
+| Sort Lines Ascending | Alphabetical A-Z |
+| Sort Lines Descending | Alphabetical Z-A |
+| Remove Duplicate Lines | Keep first occurrence of each unique line |
+| Reverse Lines | Reverse the order of selected lines |
+
+### Whitespace
+
+| Transformation | Description |
+|----------------|-------------|
+| Trim Trailing Whitespace | Remove spaces/tabs from end of each line |
+| Trim Leading Whitespace | Remove spaces/tabs from start of each line |
+| Compact Whitespace | Collapse multiple spaces/tabs to a single space |
+| Tabs to Spaces | Convert tabs to spaces |
+| Spaces to Tabs | Convert spaces to tabs |
+
+### Other
+
+| Transformation | Description |
+|----------------|-------------|
+| Reverse Text | Grapheme-cluster-aware reversal (handles emoji, surrogate pairs) |
+| Format JSON | Pretty-print JSON with tab indentation |
+| Minimize JSON | Compact single-line JSON |
+
+---
+
+## Syntax Highlighting
+
+19 built-in languages with automatic detection by file extension.
+
+| Language | Extensions |
+|----------|------------|
+| C# | `.cs` |
+| JavaScript | `.js`, `.mjs`, `.cjs` |
+| TypeScript | `.ts`, `.tsx` |
+| Python | `.py` |
+| HTML | `.html`, `.htm` |
+| CSS | `.css` |
+| XML | `.xml`, `.xaml`, `.csproj`, `.svg` |
+| JSON | `.json` |
+| SQL | `.sql` |
+| COBOL | `.cbl`, `.cob`, `.cpy`, `.cobol` |
+| Bash / Shell | `.sh`, `.bash` |
+| C | `.c`, `.h` |
+| C++ | `.cpp`, `.hpp`, `.cc`, `.cxx` |
+| Java | `.java` |
+| PHP | `.php` |
+| Ruby | `.rb` |
+| Go | `.go` |
+| Rust | `.rs` |
+| Markdown | `.md`, `.markdown` |
+
+### Features
+
+- Automatic language detection by file extension
+- Manual language selection via Language menu or status bar click
+- "Plain Text" mode disables highlighting
+- Stateless per-line lexing with token cache and edit-based invalidation
+- Token types: Keyword, String, Number, Comment, Operator, Identifier, Type, Function, Preprocessor, and more
+
+---
+
+## Custom Highlighting
+
+User-defined regex-based highlighting profiles, stored in `%APPDATA%\Bascanka\custom-highlighting.json`.
+
+### JSON Format
+
+```json
+{
+  "custom_highlighting": [
+    {
+      "name": "Log File",
+      "rules": [
+        {
+          "pattern": "ERROR.*",
+          "scope": "match",
+          "foreground": "#FF4444",
+          "background": "#3C1010"
+        },
+        {
+          "pattern": "WARN.*",
+          "scope": "line",
+          "foreground": "#FFAA00"
+        },
+        {
+          "scope": "block",
+          "begin": "<request>",
+          "end": "</request>",
+          "foldable": true,
+          "foreground": "#66CCFF",
+          "background": "#0A1520"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Rule Types
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| match | `pattern`, `foreground`, `background` | Highlight regex matches on each line |
+| line | `pattern`, `foreground`, `background` | Highlight the entire line if the regex matches anywhere on it |
+| block | `begin`, `end`, `foldable`, `foreground`, `background` | Highlight multi-line regions between start/end patterns |
+
+### Management
+
+- Language > Custom Highlighting submenu lists all profiles
+- Language > Manage Custom Highlighting opens a dialog to add, edit, delete, and reorder profiles
+- **Export** selected profiles to a JSON file
+- **Import** profiles from a JSON file (replaces existing profiles with the same name)
+
+---
+
+## Code Folding
+
+### Operations
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Toggle Fold | `Ctrl+Shift+[` | Fold or unfold the region at the caret |
+| Fold All | `Ctrl+Shift+-` | Collapse all foldable regions |
+| Unfold All | `Ctrl+Shift+=` | Expand all collapsed regions |
+
+### Features
+
+- Brace-based fold detection for `{}`, `[]`, `()`
+- Language-specific folding rules
+- Custom highlighting profiles can define foldable blocks (`"foldable": true`)
+- Clickable `[+]` / `[-]` markers in the gutter
+- Collapsed regions show `...` indicator after the fold start line
+- Disabled for files > 50 MB (configurable)
+
+---
+
+## Symbol Navigation
+
+Side panel showing code structure (View > Symbol List).
+
+### Supported Languages
+
+| Language | Symbol Types |
+|----------|-------------|
+| C# | Classes, interfaces, enums, structs, methods, properties |
+| Java | Classes, interfaces, enums, methods |
+| JavaScript / TypeScript | Classes, functions, methods |
+| Python | Classes, functions, methods |
+| Go | Structs, interfaces, functions |
+| Rust | Structs, enums, functions, impl blocks |
+| C / C++ | Structs, functions |
+
+Click a symbol to jump to its definition. The list refreshes automatically when switching documents.
+
+---
+
+## Bookmarks
+
+Toggle bookmarks by clicking the left margin of the gutter (before the line number). Bookmarks appear as blue filled circles in the gutter.
+
+- Per-document bookmark list
+- Navigate to the next or previous bookmark with wrap-around
+- Bookmark circle size configurable in Settings (default 8 px)
+- Bookmarks are not persisted across sessions
+
+---
+
+## Diff / Compare
+
+Side-by-side file comparison. Available from Tools > Compare Files or the tab context menu.
+
+### Compare Sources
+
+- Current file vs. another open tab (via tab right-click > Compare with)
+- Current file vs. an external file (file picker)
+
+### Color Coding
+
+| Color | Meaning |
+|-------|---------|
+| Green | Added lines |
+| Purple | Removed lines |
+| Blue | Modified lines (with character-level diff highlighting) |
+| Gray | Padding (blank lines inserted for alignment) |
+
+### Features
+
+- Line-level diff using LCS (Longest Common Subsequence) algorithm
+- Character-level diff within modified lines
+- Synchronized scrolling between left and right panes
+- Synchronized zoom between left and right panes
+- **Prev / Next** buttons to jump between diff sections with "Diff N of M" counter
+- Colored gutter markers for changed sections
+- Draggable splitter between left and right panes
+
+---
+
+## Hex Editor
+
+Toggle with Tools > Hex Editor or automatic for binary files.
+
+### Layout
+
+```
+Offset     00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F   ASCII
+00000000   48 65 6C 6C 6F 20 57 6F  72 6C 64 0A 00 00 00 00   Hello World.....
+```
+
+- **Offset column**: byte offset in hex
+- **Hex bytes**: 16 bytes per row, grouped in 8-byte halves
+- **ASCII column**: printable characters (`.` for non-printable)
+
+### Data Inspector
+
+Select bytes to see them interpreted as:
+
+| Type | Endianness |
+|------|------------|
+| Int8 / UInt8 | N/A |
+| Int16 / UInt16 | Little & Big |
+| Int32 / UInt32 | Little & Big |
+| Int64 / UInt64 | Little & Big |
+| Float / Double | Little & Big |
+| UTF-8 String | N/A |
+
+### Synchronization
+
+- Hex view auto-updates when text editor content changes
+- Scrolls in sync with the text editor
+
+---
+
+## Terminal
+
+Embedded terminal panel available from View > Terminal (`Ctrl+~`).
+
+### Features
+
+- Uses Windows ConPTY (Pseudo Console API, Windows 10 1809+)
+- Spawns `cmd.exe` in the directory of the currently open file
+- VT100/ANSI color support (16-color Campbell palette, 256-color mapping)
+- Scrollback buffer: up to 5,000 lines
+- Auto-resizes with the panel
+- Bold, underline, and reverse video text attributes
+- `Ctrl+V` or right-click to paste clipboard text into the terminal
+- Mouse wheel scrolls the scrollback buffer
+- Terminal padding configurable in Settings (default 6 px)
+- Appears as a tab in the bottom panel alongside Find Results
+
+---
+
+## Macros
+
+Record and replay sequences of editing actions.
+
+### Recording
+
+| Action | Menu |
+|--------|------|
+| Start Recording | Tools > Record Macro |
+| Stop Recording | Tools > Stop Recording |
+
+Status bar shows a red "REC" indicator during recording.
+
+### Captured Actions
+
+- Character input (typing)
+- Deletions (Backspace, Delete)
+- Caret movements (arrow keys, Home, End, Page Up/Down)
+- Consecutive identical actions auto-merge for compact storage
+
+### Playback
+
+| Action | Shortcut |
+|--------|----------|
+| Play Macro | `F5` |
+
+Replays the last recorded macro. Fully supports undo (entire playback is one undo step).
+
+### Macro Manager
+
+Tools > Macro Manager dialog to:
+
+- View all saved macros
+- Replay a saved macro
+- Delete macros
+
+Macros are stored as JSON in `%APPDATA%\Bascanka\macros\`.
+
+---
+
+## Zoom
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Zoom In | `Ctrl++` or `Ctrl+Mouse Wheel Up` | Increase font size by 1 px |
+| Zoom Out | `Ctrl+-` or `Ctrl+Mouse Wheel Down` | Decrease font size by 1 px |
+| Reset Zoom | `Ctrl+0` | Restore default font size |
+
+- Minimum font size: 6 px (configurable)
+- Zoom percentage shown in status bar (e.g. 100%, 150%, 200%)
+- Each tab maintains independent zoom level, persisted across sessions
+
+---
+
+## Word Wrap
+
+Toggle from View > Word Wrap.
+
+- Long lines wrap at the viewport width
+- Line numbers in the gutter show logical (document) line numbers
+- Caret and arrow keys navigate visual rows
+- Scrollbar reflects total visual rows
+
+---
+
+## Whitespace Display
+
+Toggle from View > Show Whitespace.
+
+| Character | Glyph |
+|-----------|-------|
+| Space | `·` (middle dot) |
+| Tab | `→` (right arrow) |
+| Newline | `¶` (pilcrow) at end of line |
+
+Drawn as an overlay with configurable opacity (10-255, default 100).
+
+---
+
+## Full Screen
+
+`F11` toggles full-screen mode: hides the menu bar, status bar, and window border, and maximizes the window. Press `F11` again to restore.
+
+---
+
+## Printing
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Print | `Ctrl+P` | System print dialog |
+| Print Preview | | Preview before printing |
+
+Prints document text with the current editor font. Document title is shown as a header on the first page. Automatic page breaks respect line boundaries.
+
+---
+
+## Encoding & Line Endings
+
+### Supported Encodings
+
+| Encoding | BOM Detection |
+|----------|---------------|
+| UTF-8 | Optional BOM (`EF BB BF`) |
+| UTF-8 with BOM | Forced BOM |
+| UTF-16 LE | BOM `FF FE` |
+| UTF-16 BE | BOM `FE FF` |
+| ASCII | All bytes < 128 |
+| Windows-1252 | Fallback heuristic |
+| ISO-8859-1 | Explicit selection |
+| GB2312 | Chinese Simplified |
+
+Encoding is auto-detected on open and preserved on save. Change encoding via the Encoding menu or by clicking the encoding label in the status bar.
+
+### Line Endings
+
+| Style | Bytes | Platform |
+|-------|-------|----------|
+| CRLF | `\r\n` | Windows |
+| LF | `\n` | Unix / macOS |
+| CR | `\r` | Classic Mac |
+
+Line ending style is auto-detected on open. Internally all line endings are normalized to `\n`; the original style is restored on save. Change via the Encoding menu or by clicking the line-ending label in the status bar.
+
+---
+
+## Themes
+
+Three built-in themes: **System** (default), **Dark**, and **Light**.
+
+The **System** theme auto-detects the Windows light/dark mode setting at launch and applies the corresponding theme.
+
+### Customizable Colors (30+)
+
+| Category | Properties |
+|----------|------------|
+| Editor | Background, Foreground, Line Highlight, Selection BG/FG, Caret, Bracket Match, Match Highlight |
+| Gutter | Background, Foreground, Current Line, Folding Marker |
+| Tabs | Bar BG, Active BG/FG, Inactive BG/FG, Border |
+| Status Bar | Background, Foreground |
+| Find Panel | Background, Foreground |
+| Menus | Background, Foreground, Highlight |
+| Scroll Bar | Background, Thumb |
+| Diff | Added BG, Removed BG, Modified BG, Modified Char BG, Padding BG |
+| Syntax Tokens | Keyword, String, Number, Comment, Operator, Identifier, Type, Function, Preprocessor |
+
+### Color Customization (Settings > Appearance)
+
+- Click any color swatch to open a color picker
+- Hex display (`#RRGGBB`)
+- Reset individual colors or all colors to theme defaults
+- Per-theme overrides stored separately
+- Export/import themes as JSON
+
+---
+
+## Localization
+
+### Built-in Languages
+
+| Code | Name |
+|------|------|
+| `en` | English |
+| `hr` | Hrvatski (Croatian) |
+| `sr` | Ћирилица (Serbian Cyrillic) |
+| `zh` | 中文 (Chinese Simplified) |
+
+### Switching Language
+
+Settings > Appearance > UI Language. The entire UI (menus, dialogs, status bar, error messages) rebuilds in the selected language.
+
+### Adding Languages
+
+Drop a new `lang_xx.json` file in the Resources folder. Structure:
+
+```json
+{
+  "languageName": "Display Name",
+  "languageCode": "xx",
+  "strings": {
+    "MenuFile": "File",
+    "MenuEdit": "Edit",
+    ...
+  }
+}
+```
+
+---
+
+## Settings
+
+Open from Tools > Settings. Stored in `%APPDATA%\Bascanka\settings.json`.
+
+### Editor
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| Font Family | Consolas | Any installed monospace font |
+| Font Size | 11 | 6-72 |
+| Tab Width | 4 | 1-16 |
+| Auto Indent | On | Boolean |
+| Scroll Speed (lines per notch) | 3 | 1-20 |
+| Caret Scroll Buffer | 4 | 0-20 |
+
+### Appearance
+
+| Setting | Default |
+|---------|---------|
+| Theme | System |
+| UI Language | English |
+| Color Customization | 30+ individual color overrides |
+
+### Display
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| Caret Blink Rate (ms) | 500 | 100-2000 |
+| Text Left Padding (px) | 6 | 0-40 |
+| Line Spacing (px) | 2 | 0-20 |
+| Min Zoom Font Size | 6 | 2-20 |
+| Whitespace Opacity | 100 | 10-255 |
+| Fold Indicator Opacity | 60 | 10-255 |
+| Gutter Padding Left/Right | 8 / 12 | 0-30 |
+| Fold Button Size | 10 | 6-24 |
+| Bookmark Size | 8 | 4-20 |
+| Tab Height / Max Width / Min Width | 30 / 220 / 80 | see ranges above |
+| Menu Item Padding | configurable | |
+| Terminal Padding (px) | 6 | 0-20 |
+
+### Performance
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| Large File Threshold (MB) | 10 | 1-1000 |
+| Folding Max File Size (MB) | 50 | 1-500 |
+| Max Recent Files | 20 | 5-100 |
+| Search History Limit | 25 | 5-100 |
+| Search Debounce (ms) | 300 | 50-2000 |
+| Auto-Save Interval (seconds) | 10 | 1-300 |
+
+### System
+
+- **Old Style Explorer Context Menu** - register/unregister "Edit with Bascanka" in the classic right-click menu
+- **Modern Style Explorer Context Menu** - register/unregister "Edit with Bascanka" in the Windows 11 primary context menu (requires Explorer restart)
+- **Open App Data Folder** - open the Bascanka settings folder in Explorer
+- **Export Settings** - save all settings to a JSON file
+- **Import Settings** - load settings from a JSON file
+- **Reset to Defaults** - restore factory settings (preserves session state)
+
+---
+
+## Session Management
+
+Bascanka automatically saves and restores your workspace.
+
+### What Is Persisted
+
+- Window position, size, and maximized state
+- All open tabs (file paths)
+- Active (selected) tab
+- Per-tab state: zoom, scroll position, caret position, language, encoding, line ending
+- Search history
+
+### Deferred Loading
+
+On startup, only the active tab loads immediately. Other tabs load on demand when you click them, keeping startup fast even with many open files.
+
+### Storage
+
+`%APPDATA%\Bascanka\session.json`
+
+### Reset
+
+Use `--reset` or `-r` on the command line to clear session state and start fresh.
+
+---
+
+## Recovery / Auto-Save
+
+Bascanka silently writes document state to disk every 10 seconds (configurable), enabling full workspace restoration after a crash or abnormal exit.
+
+### How It Works
+
+- Only modified and dirty tabs are saved on each tick
+- Recovery data is stored in `%APPDATA%\Bascanka\recovery\`
+- On normal shutdown, the recovery directory is deleted
+- On crash/abnormal exit, the next launch detects recovery data and prompts to restore
+
+### Recovery Formats
+
+| Format | Used For | Description |
+|--------|----------|-------------|
+| Text | Normal files | Full UTF-8 content dump |
+| Pieces | Large (memory-mapped) files | Binary format storing only the add-buffer and piece descriptors — much smaller than a full copy |
+
+### What Is Recovered
+
+- All modified tab contents
+- Window geometry (position, size, maximized state)
+- Per-tab caret position, scroll position, zoom level
+- Language, encoding, and line ending per tab
+- Search history
+
+---
+
+## Large File Handling
+
+Files above the configurable threshold (default 10 MB) use a specialized pipeline.
+
+| Component | Purpose |
+|-----------|---------|
+| `MemoryMappedFileSource` | Maps file into virtual memory; OS pages data in/out as needed |
+| Chunk Directory | O(log N) random access via binary search over `_chunkCharOffsets[]` |
+| Pre-computed Line Offsets | Built during background scan; avoids O(N^2) full-file scan |
+| `ChunkCache` (4 MB) | Bounds memory for decoded text from mapped files |
+| Background Loading | Async with progress overlay and cancel button |
+
+### Text Buffer Performance
+
+| Operation | Complexity |
+|-----------|------------|
+| Insert / Delete | O(log N) |
+| Character lookup | O(log N) |
+| Line lookup | O(log N) |
+| Undo / Redo | O(1) |
+| Literal search | O(N) with vectorized acceleration |
+| Regex search | O(N * pattern) |
+
+---
+
+## Plugin System
+
+Plugins extend Bascanka with custom functionality. Enabled via the `--plugins` command-line flag.
+
+### Plugin Interface
+
+```csharp
+public interface IPlugin
+{
+    string Name { get; }
+    string Version { get; }
+    void Initialize(IEditorHost host);
+    void Shutdown();
+}
+```
+
+### Available APIs
+
+| API | Capabilities |
+|-----|-------------|
+| `IBufferApi` | Read/write document text, get line count, get selection, undo/redo |
+| `IMenuApi` | Add/remove menu items |
+| `IPanelApi` | Add/remove side and bottom panels |
+| `IStatusBarApi` | Add/remove status bar fields |
+
+### Loading
+
+- Place `.dll` or `.csx` files in a `Plugins/` folder next to the executable
+- C# script files (`.csx`) are compiled at runtime via `ScriptCompiler`
+- Plugins menu appears in the menu bar with dynamic entries per loaded plugin
+
+---
+
+## Command-Line Interface
+
+```
+Bascanka.exe [options] [file1 file2 ...]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `file1 file2 ...` | Open the specified files in tabs |
+| `--plugins` | Enable the Plugins menu |
+| `-r`, `--reset` | Clear session state and start fresh |
+
+### Single-Instance Behavior
+
+When files are passed on the command line and Bascanka is already running, the files are sent to the existing instance via IPC. No-argument launches always start a new instance.
+
+---
+
+## Explorer Integration
+
+### Old Style Context Menu
+
+Settings > System > register "Edit with Bascanka" in the classic Windows Explorer right-click menu.
+
+- Registry path: `HKCU\Software\Classes\*\shell\Bascanka`
+- No admin rights required (uses `HKEY_CURRENT_USER`)
+- Register or unregister with a single checkbox
+- Menu label is localized to the current UI language
+
+### Modern Style Context Menu
+
+Settings > System > register "Edit with Bascanka" in the Windows 11 primary context menu (without clicking "Show more options").
+
+- Uses a COM DLL + sparse AppX package for native Windows 11 integration
+- Files extracted to `%LOCALAPPDATA%\Bascanka\ContextMenu\`
+- Configuration stored in `HKCU\Software\Bascanka\ContextMenu`
+- No admin rights required
+- Requires Explorer restart to take effect (option offered in Settings)
+- Menu label is localized to the current UI language
+
+---
+
+## Status Bar
+
+Left-to-right labels (all proportionally scaled with window width):
+
+| Label | Content | Clickable |
+|-------|---------|-----------|
+| Position | `Ln 42 : Col 17` | No |
+| Selection | `Sel: 128` (when text is selected) | No |
+| Encoding | `UTF-8`, `UTF-16 LE`, etc. | Yes (quick menu) |
+| Line Ending | `CRLF`, `LF`, `CR` | Yes (quick menu) |
+| Language | `C#`, `JSON`, `Plain Text`, etc. | Yes (quick menu) |
+| File Size | `1.2 KB`, `45.3 MB`, etc. | No |
+| Insert Mode | `INS` or `OVR` | No |
+| Read-Only | `R/O` (when file is read-only) | No |
+| Zoom | `100%`, `150%`, etc. | No |
+| Macro | Red `REC` badge (during recording) | No |
+| Branding | `Bascanka v.X.X.X` | No |
+
+---
+
+## Keyboard Shortcuts
+
+All shortcuts are customizable. Overrides are stored in `%APPDATA%\Bascanka\shortcuts.json`.
+
+### File
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+N` | New |
+| `Ctrl+O` | Open |
+| `Ctrl+S` | Save |
+| `Ctrl+Shift+S` | Save As |
+| `Ctrl+P` | Print |
+| `Ctrl+W` | Close Tab |
+| `Alt+F4` | Exit |
+
+### Edit
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` | Redo |
+| `Ctrl+X` | Cut |
+| `Ctrl+C` | Copy |
+| `Ctrl+V` | Paste |
+| `Ctrl+A` | Select All |
+| `Ctrl+D` | Duplicate Line |
+| `Ctrl+L` / `Ctrl+Shift+K` | Delete Line |
+| `Alt+Up` | Move Line Up |
+| `Alt+Down` | Move Line Down |
+| `Ctrl+Shift+Up` | Copy Line Up |
+| `Ctrl+Shift+Down` | Copy Line Down |
+| `Insert` | Toggle Insert/Overwrite |
+
+### Navigation
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+G` | Go to Line |
+| `Ctrl+F` | Find |
+| `Ctrl+H` | Find & Replace |
+| `Ctrl+Shift+F` | Find in Tabs |
+| `F3` | Find Next |
+| `Shift+F3` | Find Previous |
+| `Ctrl+Tab` | Next Tab |
+| `Ctrl+Shift+Tab` | Previous Tab |
+| `Home` | Start of line (smart: first non-whitespace, then column 0) |
+| `End` | End of line |
+| `Ctrl+Home` | Start of document |
+| `Ctrl+End` | End of document |
+| `Ctrl+Left/Right` | Word jump |
+
+### View
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl++` | Zoom In |
+| `Ctrl+-` | Zoom Out |
+| `Ctrl+0` | Reset Zoom |
+| `F11` | Toggle Full Screen |
+| `Ctrl+Shift+[` | Toggle Fold |
+| `Ctrl+Shift+-` | Fold All |
+| `Ctrl+Shift+=` | Unfold All |
+| `Ctrl+~` | Toggle Terminal |
+| `Escape` | Close Find Panel |
+
+### Macros
+
+| Shortcut | Action |
+|----------|--------|
+| `F5` | Play Macro |
+
+### Mouse
+
+| Action | Effect |
+|--------|--------|
+| Click | Place caret |
+| Double-click | Select word |
+| Triple-click | Select line |
+| `Shift+Click` | Extend selection |
+| `Alt+Click+Drag` | Column (box) selection |
+| `Ctrl+Mouse Wheel` | Zoom in/out |
+| Mouse Wheel | Scroll (configurable speed) |
+| Drag file onto window | Open file |
+| Click gutter margin | Toggle bookmark |
+
+---
+
+## Deployment
+
+| Build | Size | Requirements |
+|-------|------|-------------|
+| Framework-dependent | ~2 MB | .NET 10 runtime installed |
+| Self-contained | ~120 MB | Works on any Windows machine |
+
+No installation required. Single portable EXE. No third-party dependencies.

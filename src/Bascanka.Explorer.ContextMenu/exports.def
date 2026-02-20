@@ -1,0 +1,4 @@
+LIBRARY "Bascanka.Explorer.ContextMenu"
+EXPORTS
+    DllGetClassObject     PRIVATE
+    DllCanUnloadNow       PRIVATE

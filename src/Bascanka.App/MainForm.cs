@@ -33,6 +33,11 @@ public sealed class MainForm : Form
     // ── Find results ─────────────────────────────────────────────────
     private readonly FindResultsPanel _findResultsPanel;
 
+    // ── Bottom panel tabs ──────────────────────────────────────────────
+    private readonly BottomPanelTabStrip _bottomTabStrip;
+    private readonly Panel _bottomContentPanel;
+    private TerminalPanel? _terminalPanel;
+
     // ── Symbol list ───────────────────────────────────────────────────
     private readonly SymbolListPanel _symbolListPanel;
 
@@ -45,6 +50,7 @@ public sealed class MainForm : Form
     private readonly PluginHost _pluginHost;
     private readonly KeyboardShortcutManager _shortcutManager;
     private readonly CustomHighlightStore _customHighlightStore;
+    private readonly RecoveryManager _recoveryManager;
 
     // ── Document state ───────────────────────────────────────────────
     private readonly List<TabInfo> _tabs = new();
@@ -99,6 +105,7 @@ public sealed class MainForm : Form
         // ── Create layout controls ───────────────────────────────────
         _menuStrip = new MenuStrip { Dock = DockStyle.Top };
         _tabStrip = new TabStrip { Dock = DockStyle.Top };
+        _tabStrip.ContextMenuRenderer = t => new ThemedMenuRenderer(t);
         _statusStrip = new StatusStrip { Dock = DockStyle.Bottom };
 
         _sidePanel = new Panel
@@ -126,19 +133,43 @@ public sealed class MainForm : Form
         _horizontalSplit.Panel1.Controls.Add(_editorPanel);
         _horizontalSplit.Panel2.Controls.Add(_bottomPanel);
 
-        // ── Find results panel in bottom panel ───────────────────────
-        _findResultsPanel = new FindResultsPanel { Dock = DockStyle.Fill };
+        // ── Bottom panel tab strip + content area ─────────────────────
+        _bottomTabStrip = new BottomPanelTabStrip { Dock = DockStyle.Top };
+        _bottomContentPanel = new Panel { Dock = DockStyle.Fill };
+
+        _findResultsPanel = new FindResultsPanel { Dock = DockStyle.Fill, Visible = false };
+        _findResultsPanel.ContextMenuRenderer = t => new ThemedMenuRenderer(t);
+        _findResultsPanel.ShowHeader = false;
         _findResultsPanel.NavigateToResult += OnNavigateToFindResult;
         _findResultsPanel.OpenResultsInNewTab += OnOpenFindResultsInNewTab;
-        _findResultsPanel.PanelCloseRequested += (_, _) =>
+        _findResultsPanel.PageChanging += (_, _) =>
+            _searchOverlay.ShowOverlay(this, "Loading results...", indeterminate: true);
+        _findResultsPanel.PageChanged += (_, _) => _searchOverlay.HideOverlay();
+
+        _bottomContentPanel.Controls.Add(_findResultsPanel);
+
+        _bottomTabStrip.AddTab(new BottomPanelTab
+        {
+            Id = "findResults",
+            Title = Strings.FindResultsHeader,
+            Content = _findResultsPanel,
+            Closable = true,
+        });
+
+        _bottomTabStrip.TabSelected += OnBottomTabSelected;
+        _bottomTabStrip.TabCloseRequested += OnBottomTabCloseRequested;
+        _bottomTabStrip.PanelCloseRequested += (_, _) =>
         {
             IsBottomPanelVisible = false;
             _menuBuilder.UpdateMenuState(this);
         };
-        _findResultsPanel.PageChanging += (_, _) =>
-            _searchOverlay.ShowOverlay(this, "Loading results...", indeterminate: true);
-        _findResultsPanel.PageChanged += (_, _) => _searchOverlay.HideOverlay();
-        _bottomPanel.Controls.Add(_findResultsPanel);
+
+        // Layout order: tab strip on top, content fills rest.
+        _bottomPanel.Controls.Add(_bottomContentPanel);
+        _bottomPanel.Controls.Add(_bottomTabStrip);
+
+        // Select the first tab.
+        _bottomTabStrip.SelectTab("findResults");
 
         // ── Symbol list panel in side panel ─────────────────────────
         _symbolListPanel = new SymbolListPanel { Dock = DockStyle.Fill };
@@ -160,6 +191,8 @@ public sealed class MainForm : Form
         _tabStrip.TabSelected += OnTabSelected;
         _tabStrip.TabClosed += OnTabCloseRequested;
         _tabStrip.TabsReordered += OnTabsReordered;
+        _tabStrip.TabContextMenuOpening += OnTabContextMenuOpening;
+        _tabStrip.NewTabRequested += (_, _) => NewDocument();
 
         // ── Add controls in correct Z-order ──────────────────────────
         Controls.Add(_verticalSplit);
@@ -184,6 +217,7 @@ public sealed class MainForm : Form
         _pluginHost = new PluginHost(this);
         _customHighlightStore = new CustomHighlightStore();
         _customHighlightStore.Load();
+        _recoveryManager = new RecoveryManager(this);
         _menuBuilder = new MenuBuilder();
 
         // Build the main menu (wires all menu items).
@@ -277,6 +311,8 @@ public sealed class MainForm : Form
         var pieceTable = new PieceTable(string.Empty);
         var editor = new EditorControl(pieceTable);
         editor.Theme = ThemeManager.Instance.CurrentTheme;
+        if (EditorControl.DefaultWordWrap)
+            editor.WordWrap = true;
         WireEditorEvents(editor);
 
         var tab = new TabInfo
@@ -847,7 +883,122 @@ public sealed class MainForm : Form
     /// </summary>
     public void ToggleFindResults()
     {
-        IsBottomPanelVisible = !IsBottomPanelVisible;
+        if (IsBottomPanelVisible && IsFindResultsTabActive)
+        {
+            IsBottomPanelVisible = false;
+        }
+        else
+        {
+            EnsureFindResultsTab();
+            _bottomTabStrip.SelectTab("findResults");
+            ShowSelectedBottomTab();
+            IsBottomPanelVisible = true;
+        }
+    }
+
+    private void EnsureFindResultsTab()
+    {
+        if (!_bottomTabStrip.HasTab("findResults"))
+        {
+            _bottomTabStrip.AddTab(new BottomPanelTab
+            {
+                Id = "findResults",
+                Title = Strings.FindResultsHeader,
+                Content = _findResultsPanel,
+                Closable = true,
+            });
+            _findResultsPanel.Visible = false;
+        }
+    }
+
+    /// <summary>
+    /// Toggles the terminal panel. Creates the terminal tab on first call.
+    /// </summary>
+    public void ToggleTerminal()
+    {
+        if (IsBottomPanelVisible && IsTerminalTabActive)
+        {
+            IsBottomPanelVisible = false;
+        }
+        else
+        {
+            EnsureTerminalTab();
+            _bottomTabStrip.SelectTab("terminal");
+            ShowSelectedBottomTab();
+            IsBottomPanelVisible = true;
+        }
+    }
+
+    /// <summary>Whether the Find Results tab is currently selected in the bottom panel.</summary>
+    public bool IsFindResultsTabActive => _bottomTabStrip.SelectedTabId == "findResults";
+
+    /// <summary>Whether the Terminal tab is currently selected in the bottom panel.</summary>
+    public bool IsTerminalTabActive => _bottomTabStrip.SelectedTabId == "terminal";
+
+    private void EnsureTerminalTab()
+    {
+        if (_bottomTabStrip.HasTab("terminal")) return;
+
+        _terminalPanel = new TerminalPanel { Dock = DockStyle.Fill, Visible = false };
+        _terminalPanel.Theme = ThemeManager.Instance.CurrentTheme;
+        _bottomContentPanel.Controls.Add(_terminalPanel);
+
+        _bottomTabStrip.AddTab(new BottomPanelTab
+        {
+            Id = "terminal",
+            Title = Strings.MenuTerminal.Replace("&", ""),
+            Content = _terminalPanel,
+            Closable = true,
+        });
+
+        // Start in the current document's folder if available.
+        string? dir = ActiveTab?.FilePath is not null
+            ? Path.GetDirectoryName(ActiveTab.FilePath)
+            : null;
+        _terminalPanel.Start(dir);
+    }
+
+    private void OnBottomTabSelected(object? sender, BottomTabEventArgs e)
+    {
+        ShowSelectedBottomTab();
+        if (e.TabId == "terminal")
+            _terminalPanel?.FocusTerminal();
+        _menuBuilder.UpdateMenuState(this);
+    }
+
+    private void OnBottomTabCloseRequested(object? sender, BottomTabEventArgs e)
+    {
+        if (e.TabId == "terminal" && _terminalPanel is not null)
+        {
+            _terminalPanel.Stop();
+            _bottomContentPanel.Controls.Remove(_terminalPanel);
+            _terminalPanel.Dispose();
+            _terminalPanel = null;
+            _bottomTabStrip.RemoveTab("terminal");
+        }
+        else if (e.TabId == "findResults")
+        {
+            _findResultsPanel.Visible = false;
+            _bottomTabStrip.RemoveTab("findResults");
+        }
+
+        // If no tabs remain, collapse the panel
+        if (!_bottomTabStrip.HasTab("findResults") && !_bottomTabStrip.HasTab("terminal"))
+        {
+            IsBottomPanelVisible = false;
+        }
+        else
+        {
+            ShowSelectedBottomTab();
+        }
+        _menuBuilder.UpdateMenuState(this);
+    }
+
+    private void ShowSelectedBottomTab()
+    {
+        _findResultsPanel.Visible = _bottomTabStrip.SelectedTabId == "findResults";
+        if (_terminalPanel is not null)
+            _terminalPanel.Visible = _bottomTabStrip.SelectedTabId == "terminal";
     }
 
     /// <summary>
@@ -857,6 +1008,9 @@ public sealed class MainForm : Form
     {
         _findResultsPanel.Theme = ThemeManager.Instance.CurrentTheme;
         _findResultsPanel.AddSearchResults(results, searchPattern, Strings.ScopeCurrentDocument);
+        EnsureFindResultsTab();
+        _bottomTabStrip.SelectTab("findResults");
+        ShowSelectedBottomTab();
         IsBottomPanelVisible = true;
         _menuBuilder.UpdateMenuState(this);
     }
@@ -1082,8 +1236,18 @@ public sealed class MainForm : Form
     /// </summary>
     public void ShowAbout()
     {
-        using var dlg = new AboutForm();
+        using var dlg = new AboutForm(ThemeManager.Instance.CurrentTheme);
         dlg.ShowDialog(this);
+    }
+
+    /// <summary>
+    /// Opens the %AppData%\Bascanka folder in Windows Explorer.
+    /// </summary>
+    public void OpenAppDataFolder()
+    {
+        string path = SettingsManager.AppDataFolder;
+        Directory.CreateDirectory(path);
+        System.Diagnostics.Process.Start("explorer.exe", path);
     }
 
     /// <summary>
@@ -1111,6 +1275,12 @@ public sealed class MainForm : Form
         // Refresh tab strip with new dimensions.
         _tabStrip.Height = TabStrip.ConfigTabHeight;
         _tabStrip.Invalidate();
+
+        // Refresh recent files menu in case display style changed.
+        _menuBuilder.RefreshRecentFilesMenu(this);
+
+        // Apply auto-save interval to the recovery timer.
+        _recoveryManager.SetInterval(ConfigAutoSaveIntervalSeconds);
     }
 
     /// <summary>
@@ -1169,6 +1339,7 @@ public sealed class MainForm : Form
         EditorControl.DefaultTabWidth = SettingsManager.GetInt(SettingsManager.KeyTabWidth, 4);
         EditorControl.DefaultScrollSpeed = SettingsManager.GetInt(SettingsManager.KeyScrollSpeed, 3);
         EditorControl.DefaultAutoIndent = SettingsManager.GetBool(SettingsManager.KeyAutoIndent, true);
+        EditorControl.DefaultWordWrap = SettingsManager.GetBool(SettingsManager.KeyWordWrap, false);
         EditorControl.DefaultCaretScrollBuffer = SettingsManager.GetInt(SettingsManager.KeyCaretScrollBuffer, 4);
 
         // Display
@@ -1183,6 +1354,8 @@ public sealed class MainForm : Form
         EditorControl.DefaultFoldButtonSize = SettingsManager.GetInt(SettingsManager.KeyFoldButtonSize, 10);
         EditorControl.DefaultBookmarkSize = SettingsManager.GetInt(SettingsManager.KeyBookmarkSize, 8);
         TabStrip.ConfigTabHeight = SettingsManager.GetInt(SettingsManager.KeyTabHeight, 30);
+        ThemedMenuRenderer.ConfigMenuItemPadding = SettingsManager.GetInt(SettingsManager.KeyMenuItemPadding, ThemedMenuRenderer.DefaultMenuItemPadding);
+        TerminalPanel.ConfigTerminalPadding = SettingsManager.GetInt(SettingsManager.KeyTerminalPadding, TerminalPanel.DefaultTerminalPadding);
         TabStrip.ConfigMaxTabWidth = SettingsManager.GetInt(SettingsManager.KeyMaxTabWidth, 220);
         TabStrip.ConfigMinTabWidth = SettingsManager.GetInt(SettingsManager.KeyMinTabWidth, 80);
 
@@ -1192,6 +1365,7 @@ public sealed class MainForm : Form
         RecentFilesManager.MaxRecentFiles = SettingsManager.GetInt(SettingsManager.KeyMaxRecentFiles, 20);
         FindReplacePanel.ConfigMaxHistoryItems = SettingsManager.GetInt(SettingsManager.KeySearchHistoryLimit, 25);
         EditorControl.DefaultSearchDebounce = SettingsManager.GetInt(SettingsManager.KeySearchDebounce, 300);
+        ConfigAutoSaveIntervalSeconds = SettingsManager.GetInt(SettingsManager.KeyAutoSaveInterval, RecoveryManager.DefaultIntervalSeconds);
     }
 
     /// <summary>
@@ -1254,21 +1428,34 @@ public sealed class MainForm : Form
                         ? source
                         : new BorrowedTextSource(source);
 
-                    tab.Editor.Document = new PieceTable(textSource);
+                    // Suppress painting during document swap to avoid blinking.
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                    try
+                    {
+                        tab.Editor.Document = new PieceTable(textSource);
+
+                        // Restore caret BEFORE scroll so that the scroll position
+                        // the user is actually looking at wins over EnsureVisible.
+                        long docLen = tab.Editor.Document.Length;
+                        if (hadSelection && savedSelStart < docLen)
+                        {
+                            long clampedEnd = Math.Min(savedSelEnd, docLen);
+                            tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
+                        }
+                        else if (savedCaret > 0 && savedCaret <= docLen)
+                        {
+                            tab.Editor.CaretOffset = savedCaret;
+                        }
+
+                        tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
+                    }
+                    finally
+                    {
+                        SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                        tab.Editor.Invalidate(true);
+                    }
+
                     tab.Editor.FileSizeBytes = source.ScannedBytes;
-                    tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
-
-                    long docLen = tab.Editor.Document.Length;
-                    if (hadSelection && savedSelStart < docLen)
-                    {
-                        long clampedEnd = Math.Min(savedSelEnd, docLen);
-                        tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
-                    }
-                    else if (savedCaret > 0 && savedCaret <= docLen)
-                    {
-                        tab.Editor.CaretOffset = savedCaret;
-                    }
-
                     UpdateStatusBar();
 
                     if (!done)
@@ -1279,6 +1466,7 @@ public sealed class MainForm : Form
                 tab.Editor.EncodingManager = new EncodingManager(source.Encoding,
                     source.Encoding.GetPreamble().Length > 0);
                 tab.Editor.LineEnding = source.DetectedLineEnding;
+                tab.Editor.IsMemoryMappedDocument = true;
                 tab.Editor.IsReadOnly = false;
                 tab.IsModified = false;
                 RefreshTabDisplay(tab);
@@ -1349,21 +1537,27 @@ public sealed class MainForm : Form
             SettingsManager.SetString(SettingsManager.KeyTheme, ThemeManager.Instance.CurrentTheme.Name);
         };
 
-        // Open files from command line.
-        if (_initialFiles.Length > 0)
+        // Restore previous session (or crash recovery), then open any command-line files on top.
+        if (RecoveryManager.HasRecoveryData() && _recoveryManager.RestoreFromRecovery())
         {
-            foreach (string file in _initialFiles)
-                OpenFile(file);
+            // Crash recovery succeeded.
         }
         else
         {
             // Try to restore previous session.
-            if (!_sessionManager.RestoreSession(this))
+            if (!_sessionManager.RestoreSession(this) && _initialFiles.Length == 0)
             {
-                // No session to restore; create a new empty document.
+                // No session to restore and no files to open; create a new empty document.
                 NewDocument();
             }
         }
+
+        // Open files from command line (on top of the restored session).
+        foreach (string file in _initialFiles)
+            OpenFile(file);
+
+        _recoveryManager.SetInterval(ConfigAutoSaveIntervalSeconds);
+        _recoveryManager.Start();
 
         // Load plugins.
         _pluginHost.LoadPlugins();
@@ -1405,6 +1599,7 @@ public sealed class MainForm : Form
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+    private const int WM_SETREDRAW = 0x000B;
     private const int WM_CUT   = 0x0300;
     private const int WM_COPY  = 0x0301;
     private const int WM_PASTE = 0x0302;
@@ -1415,45 +1610,32 @@ public sealed class MainForm : Form
     {
         base.OnFormClosing(e);
 
-        // Prompt to save modified documents.
-        for (int i = _tabs.Count - 1; i >= 0; i--)
+        // Stop the recovery timer — we'll do a final write below.
+        _recoveryManager.Stop();
+
+        bool hasModified = _tabs.Any(t => t.IsModified);
+
+        if (hasModified)
         {
-            if (_tabs[i].IsModified)
+            // Force a final recovery snapshot so dirty tabs survive the exit.
+            // Mark all modified tabs dirty so the final tick writes their content.
+            foreach (var tab in _tabs)
             {
-                ActivateTab(i);
-                DialogResult result = MessageBox.Show(
-                    string.Format(Strings.PromptSaveChanges, _tabs[i].Title),
-                    Strings.AppTitle,
-                    MessageBoxButtons.YesNoCancel,
-                    MessageBoxIcon.Question);
-
-                switch (result)
-                {
-                    case DialogResult.Yes:
-                        if (_tabs[i].FilePath is null)
-                        {
-                            SaveAs();
-                            if (_tabs[i].IsModified)
-                            {
-                                // User cancelled SaveAs dialog -- cancel close.
-                                e.Cancel = true;
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            SaveDocument(_tabs[i]);
-                        }
-                        break;
-
-                    case DialogResult.Cancel:
-                        e.Cancel = true;
-                        return;
-
-                    // DialogResult.No: discard changes and continue.
-                }
+                if (tab.IsModified)
+                    _recoveryManager.MarkDirty(tab.Id);
             }
+            _recoveryManager.ForceWrite();
+            // Do NOT clean up recovery data — next launch will restore it.
         }
+        else
+        {
+            // No unsaved work — delete recovery data for a clean start.
+            _recoveryManager.CleanUp();
+        }
+        _recoveryManager.Dispose();
+
+        // Stop terminal process.
+        _terminalPanel?.Stop();
 
         // Save session and shutdown plugins.
         _sessionManager.SaveSession(this);
@@ -1571,7 +1753,7 @@ public sealed class MainForm : Form
     /// Creates a lightweight placeholder tab for session restore.
     /// The file is not loaded until the tab is activated.
     /// </summary>
-    public void AddDeferredTab(string path, int zoom, int scroll, int caret)
+    public void AddDeferredTab(string path, int zoom, int scroll, int caret, bool wordWrap = false)
     {
         var editor = new EditorControl();
         editor.Theme = ThemeManager.Instance.CurrentTheme;
@@ -1586,10 +1768,205 @@ public sealed class MainForm : Form
             PendingZoom = zoom,
             PendingScroll = scroll,
             PendingCaret = caret,
+            PendingWordWrap = wordWrap ? true : null,
         };
 
         _tabs.Add(tab);
         _tabStrip.AddTab(tab, select: false);
+    }
+
+    /// <summary>
+    /// Wires editor events and adds a recovered tab with pending state.
+    /// Used by <see cref="RecoveryManager"/> during crash recovery restore.
+    /// </summary>
+    internal void WireAndAddRecoveredTab(TabInfo tab, long caret, int scroll, int zoom)
+    {
+        WireEditorEvents(tab.Editor);
+
+        tab.PendingCaret = caret;
+        tab.PendingScroll = scroll;
+        tab.PendingZoom = zoom;
+
+        _tabs.Add(tab);
+        _tabStrip.AddTab(tab, select: false);
+
+        if (tab.FilePath is not null)
+            _fileWatcher.Watch(tab);
+    }
+
+    /// <summary>
+    /// Asynchronously restores a large MMF-backed tab from recovery data.
+    /// Creates a placeholder tab immediately, scans the file incrementally on a
+    /// background thread, then reconstructs the piece table from recovery pieces.
+    /// Same pattern as <see cref="OpenLargeFile"/>.
+    /// </summary>
+    internal async void RestoreLargeFileFromRecovery(
+        string path, long fileSize,
+        string addBuffer, IReadOnlyList<Piece> pieces,
+        int codePage, bool hasBom, string? lineEnding, string? language,
+        long savedCaret, int savedScroll, int savedZoom,
+        Guid? recoveryTabId = null, bool wordWrap = false,
+        string? customProfileName = null)
+    {
+        // 1. Create tab immediately with an empty document + read-only.
+        var editor = new EditorControl(new PieceTable(string.Empty));
+        editor.Theme = ThemeManager.Instance.CurrentTheme;
+        editor.IsReadOnly = true;
+        editor.IsMemoryMappedDocument = true; // set early so recovery timer uses pieces format
+        WireEditorEvents(editor);
+
+        string ext = Path.GetExtension(path);
+        ILexer? lexer = null;
+        if (!string.IsNullOrEmpty(language))
+            lexer = LexerRegistry.Instance.GetLexerById(language);
+        lexer ??= LexerRegistry.Instance.GetLexerByExtension(ext);
+        if (lexer is not null)
+            editor.SetLexer(lexer);
+
+        var tab = new TabInfo
+        {
+            Id = recoveryTabId ?? Guid.NewGuid(),
+            Title = Path.GetFileName(path),
+            FilePath = path,
+            IsModified = true,
+            Editor = editor,
+        };
+
+        AddTab(tab);
+        _fileWatcher.Watch(tab);
+        tab.IsLoading = true;
+
+        try
+        {
+            // 2. Create MMF source with deferred scanning.
+            var source = await Task.Run(() =>
+                new MemoryMappedFileSource(path, normalizeLineEndings: true, deferScan: true));
+
+            // 3. Incremental scanning loop.
+            //    Every batch builds a recovery PieceTable so the user's edit
+            //    is visible throughout loading.  A single line-offset buffer is
+            //    reused across batches (doubling strategy) to avoid per-batch
+            //    LOH allocations that cause GC stalls.
+            const int FirstBatchChunks = 128;
+            const int SubsequentBatchChunks = 2048;
+            int batchSize = FirstBatchChunks;
+            bool done = false;
+            long[]? recoveryOffsetBuffer = null; // reused across batches
+
+            while (!done)
+            {
+                var batchResult = await Task.Run(() =>
+                {
+                    bool d = source.ScanNextBatch(batchSize);
+                    long scannedCharLen = source.Length;
+
+                    IReadOnlyList<Piece> safePieces = d
+                        ? pieces
+                        : RecoveryManager.FilterPiecesToScannedRange(
+                            pieces, scannedCharLen, source);
+
+                    ITextSource textSrc = d
+                        ? (ITextSource)source
+                        : new BorrowedTextSource(source);
+
+                    var pt = new PieceTable(textSrc, addBuffer, safePieces);
+
+                    long[]? srcOffsets = source.LineOffsets;
+                    int validCount = 0;
+                    if (srcOffsets is not null)
+                    {
+                        (recoveryOffsetBuffer, validCount) =
+                            RecoveryManager.ComputeRecoveryLineOffsetsInto(
+                                srcOffsets, addBuffer, safePieces, recoveryOffsetBuffer);
+                        pt.SetLineOffsetCache(recoveryOffsetBuffer, validCount);
+                    }
+                    else
+                    {
+                        pt.PrecomputeLineOffsets();
+                    }
+
+                    return (Done: d, Doc: pt, ScannedBytes: source.ScannedBytes);
+                });
+
+                done = batchResult.Done;
+
+                if (!_tabs.Contains(tab))
+                {
+                    batchResult.Doc.Dispose();
+                    return;
+                }
+
+                long curScroll = tab.Editor.ScrollMgr.FirstVisibleLine;
+                long curCaret = tab.Editor.CaretOffset;
+
+                SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                try
+                {
+                    tab.Editor.Document = batchResult.Doc;
+
+                    long docLen = tab.Editor.Document.Length;
+                    if (curCaret > 0 && curCaret <= docLen)
+                        tab.Editor.CaretOffset = curCaret;
+                    tab.Editor.ScrollMgr.ScrollToLine(curScroll);
+                }
+                finally
+                {
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                    tab.Editor.Invalidate(true);
+                }
+
+                tab.Editor.FileSizeBytes = batchResult.ScannedBytes;
+                _statusBarManager.ShowLoadingProgress(batchResult.ScannedBytes, fileSize);
+
+                if (!done)
+                    batchSize = SubsequentBatchChunks;
+            }
+
+            // 5. Final setup.
+            tab.Editor.FileSizeBytes = fileSize;
+
+            System.Text.Encoding enc;
+            try { enc = System.Text.Encoding.GetEncoding(codePage); }
+            catch { enc = new UTF8Encoding(false); }
+            tab.Editor.EncodingManager = new EncodingManager(enc, hasBom);
+
+            if (!string.IsNullOrEmpty(lineEnding))
+                tab.Editor.LineEnding = lineEnding;
+
+            tab.Editor.IsMemoryMappedDocument = true;
+            tab.Editor.IsReadOnly = false;
+            tab.IsModified = true;
+            tab.IsLoading = false;
+
+            if (savedZoom != 0)
+                tab.Editor.ZoomLevel = savedZoom;
+            if (wordWrap)
+                tab.Editor.WordWrap = true;
+
+            if (!string.IsNullOrEmpty(customProfileName))
+            {
+                var profile = _customHighlightStore.FindByName(customProfileName);
+                if (profile is not null)
+                    tab.Editor.SetCustomHighlighting(profile);
+                else if (lexer is not null)
+                    tab.Editor.SetLexer(lexer);
+            }
+            else if (lexer is not null)
+            {
+                tab.Editor.SetLexer(lexer);
+            }
+
+            RefreshTabDisplay(tab);
+            UpdateTitleBar();
+            UpdateStatusBar();
+            _menuBuilder.RefreshEncodingMenu(this);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Recovery large file restore failed: {ex.Message}");
+            tab.Editor.IsReadOnly = false;
+            tab.IsLoading = false;
+        }
     }
 
     /// <summary>
@@ -1662,11 +2039,34 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// Applies and clears pending zoom/scroll/caret state on a tab.
+    /// Applies and clears pending zoom/scroll/caret/language state on a tab.
     /// </summary>
-    private static void ApplyPendingTabState(TabInfo tab)
+    private void ApplyPendingTabState(TabInfo tab)
     {
-        if (tab.PendingZoom == 0 && tab.PendingScroll == 0 && tab.PendingCaret == 0)
+        // Apply pending language or custom highlight profile (overrides extension detection).
+        if (tab.PendingCustomProfileName is not null)
+        {
+            var profile = _customHighlightStore.FindByName(tab.PendingCustomProfileName);
+            if (profile is not null)
+                tab.Editor.SetCustomHighlighting(profile);
+            tab.PendingCustomProfileName = null;
+            tab.PendingLanguage = null;
+        }
+        else if (tab.PendingLanguage is not null)
+        {
+            if (string.Equals(tab.PendingLanguage, "plaintext", StringComparison.OrdinalIgnoreCase))
+                tab.Editor.SetLexer(null);
+            else
+            {
+                var lexer = LexerRegistry.Instance.GetLexerById(tab.PendingLanguage);
+                if (lexer is not null)
+                    tab.Editor.SetLexer(lexer);
+            }
+            tab.PendingLanguage = null;
+        }
+
+        if (tab.PendingZoom == 0 && tab.PendingScroll == 0 && tab.PendingCaret == 0
+            && tab.PendingWordWrap is null)
             return;
 
         if (tab.PendingZoom != 0)
@@ -1675,10 +2075,13 @@ public sealed class MainForm : Form
             tab.Editor.ScrollMgr.FirstVisibleLine = tab.PendingScroll;
         if (tab.PendingCaret > 0 && tab.PendingCaret <= tab.Editor.GetBufferLength())
             tab.Editor.CaretOffset = tab.PendingCaret;
+        if (tab.PendingWordWrap == true)
+            tab.Editor.WordWrap = true;
 
         tab.PendingZoom = 0;
         tab.PendingScroll = 0;
         tab.PendingCaret = 0;
+        tab.PendingWordWrap = null;
     }
 
     /// <summary>
@@ -1770,6 +2173,100 @@ public sealed class MainForm : Form
             Tag = diffView,
         };
         AddTab(tab);
+    }
+
+    // ── Tab context menu: Compare with ──────────────────────────────
+
+    private void OnTabContextMenuOpening(object? sender, TabContextMenuOpeningEventArgs e)
+    {
+        var menu = e.Menu;
+        int sourceIndex = e.Index;
+        if (sourceIndex < 0 || sourceIndex >= _tabs.Count) return;
+
+        // Remove previously added compare items (tagged).
+        for (int i = menu.Items.Count - 1; i >= 0; i--)
+        {
+            if (menu.Items[i].Tag is string tag && tag == "compare")
+                menu.Items.RemoveAt(i);
+        }
+
+        var sourceTab = _tabs[sourceIndex];
+
+        // Build "Compare with..." submenu.
+        var compareMenu = new ToolStripMenuItem(Strings.CompareWithTab) { Tag = "compare" };
+
+        // Add an entry for each other open tab.
+        for (int i = 0; i < _tabs.Count; i++)
+        {
+            if (i == sourceIndex) continue;
+            var otherTab = _tabs[i];
+            // Skip diff/sed preview tabs (they have no real editor text).
+            if (otherTab.Tag is DiffViewControl or SedPreviewControl) continue;
+
+            string itemText = otherTab.DisplayTitle ?? otherTab.Title;
+            int otherIndex = i;
+            var item = new ToolStripMenuItem(itemText);
+            item.Click += (_, _) => CompareTabWith(sourceTab, _tabs[otherIndex]);
+            compareMenu.DropDownItems.Add(item);
+        }
+
+        // Separator + Browse option (compare with file on disk).
+        if (compareMenu.DropDownItems.Count > 0)
+            compareMenu.DropDownItems.Add(new ToolStripSeparator());
+
+        var browseItem = new ToolStripMenuItem(Strings.CompareWithBrowse);
+        browseItem.Click += (_, _) => CompareTabWithFile(sourceTab);
+        compareMenu.DropDownItems.Add(browseItem);
+
+        // Insert before the last separator in the context menu (before Copy Path).
+        menu.Items.Add(new ToolStripSeparator { Tag = "compare" });
+        menu.Items.Add(compareMenu);
+    }
+
+    private void CompareTabWith(TabInfo sourceTab, TabInfo otherTab)
+    {
+        string text1 = sourceTab.Editor.GetAllText();
+        string text2 = otherTab.Editor.GetAllText();
+        string name1 = sourceTab.DisplayTitle ?? sourceTab.Title;
+        string name2 = otherTab.DisplayTitle ?? otherTab.Title;
+
+        var result = DiffEngine.Compare(text1, text2, name1, name2);
+
+        if (result.DiffCount == 0)
+        {
+            MessageBox.Show(this, Strings.DiffNoDifferences, Strings.AppTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        OpenDiffTab(result, $"{name1} \u2194 {name2}");
+    }
+
+    private void CompareTabWithFile(TabInfo sourceTab)
+    {
+        string filter = $"{Strings.FilterAllFiles} (*.*)|*.*";
+        using var dlg = new OpenFileDialog
+        {
+            Title = Strings.CompareSelectSecondFile,
+            Filter = filter,
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        string text1 = sourceTab.Editor.GetAllText();
+        string text2 = File.ReadAllText(dlg.FileName);
+        string name1 = sourceTab.DisplayTitle ?? sourceTab.Title;
+        string name2 = Path.GetFileName(dlg.FileName);
+
+        var result = DiffEngine.Compare(text1, text2, name1, name2);
+
+        if (result.DiffCount == 0)
+        {
+            MessageBox.Show(this, Strings.DiffNoDifferences, Strings.AppTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        OpenDiffTab(result, $"{name1} \u2194 {name2}");
     }
 
     // ── Sed transform ──────────────────────────────────────────────
@@ -1904,6 +2401,7 @@ public sealed class MainForm : Form
         }
         _tabs.RemoveAt(index);
         _tabStrip.RemoveTab(index);
+        _recoveryManager.RemoveTabRecovery(tab.Id);
 
         _pluginHost.RaiseDocumentClosed(closedPath);
 
@@ -1930,27 +2428,33 @@ public sealed class MainForm : Form
     {
         if (tab.FilePath is null) return;
 
+        if (tab.IsLoading)
+        {
+            MessageBox.Show(
+                Strings.FileStillLoading,
+                Strings.AppTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (tab.Editor.IsMemoryMappedDocument)
+        {
+            SaveMemoryMappedDocument(tab);
+            return;
+        }
+
         try
         {
             _fileWatcher.SuppressNextChange(tab.FilePath);
 
-            string text = tab.Editor.GetAllText();
-
-            // Normalize to \n first (defensive), then convert to target ending.
-            if (text.Contains('\r'))
-                text = text.Replace("\r\n", "\n").Replace("\r", "\n");
-
-            string le = tab.Editor.LineEnding;
-            if (le == "CRLF")
-                text = text.Replace("\n", "\r\n");
-            else if (le == "CR")
-                text = text.Replace("\n", "\r");
-
             Encoding encoding = tab.Editor.EncodingManager?.CurrentEncoding
                 ?? new UTF8Encoding(false);
             bool hasBom = tab.Editor.EncodingManager?.HasBom ?? false;
+            string le = tab.Editor.LineEnding;
 
-            using var fs = new FileStream(tab.FilePath, FileMode.Create, FileAccess.Write);
+            using var fs = new FileStream(tab.FilePath, FileMode.Create, FileAccess.Write,
+                FileShare.None, bufferSize: 65536);
 
             if (hasBom)
             {
@@ -1959,11 +2463,11 @@ public sealed class MainForm : Form
                     fs.Write(bom, 0, bom.Length);
             }
 
-            byte[] bytes = encoding.GetBytes(text);
-            fs.Write(bytes, 0, bytes.Length);
+            WriteDocumentChunked(tab.Editor.Document, fs, encoding, le);
 
             tab.Editor.FileSizeBytes = fs.Length;
             tab.IsModified = false;
+            _recoveryManager.RemoveTabRecovery(tab.Id);
             RefreshTabDisplay(tab);
             UpdateTitleBar();
             UpdateStatusBar();
@@ -1980,8 +2484,373 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Saves an MMF-backed document by writing to a temp file, releasing the
+    /// memory-mapped lock, swapping files, and reloading asynchronously.
+    /// Shows a progress dialog during the write and reload phases.
+    /// </summary>
+    private async void SaveMemoryMappedDocument(TabInfo tab)
+    {
+        if (tab.FilePath is null) return;
+
+        string tmpPath = tab.FilePath + ".saving.tmp";
+
+        // Build a semi-transparent overlay Form positioned over the editor.
+        var theme = ThemeManager.Instance.CurrentTheme;
+        var (overlayForm, dialogForm, progressLabel, progressBar) = CreateEditorOverlay(tab.Editor, theme);
+
+        try
+        {
+            Encoding encoding = tab.Editor.EncodingManager?.CurrentEncoding
+                ?? new UTF8Encoding(false);
+            bool hasBom = tab.Editor.EncodingManager?.HasBom ?? false;
+            string le = tab.Editor.LineEnding;
+
+            // Prevent editing during save.
+            tab.Editor.IsReadOnly = true;
+
+            // Capture PieceTable reference for background-thread reads.
+            PieceTable document = tab.Editor.Document;
+            long docLength = document.Length;
+
+            // 1. Write to temp file on background thread with progress.
+            var progress = new Progress<long>(written =>
+            {
+                if (docLength <= 0) return;
+                int permille = (int)(written * 1000 / docLength);
+                progressBar.Value = Math.Min(permille, 1000);
+                string writtenStr = StatusBarManager.FormatFileSize(written);
+                string totalStr = StatusBarManager.FormatFileSize(docLength);
+                progressLabel.Text = string.Format(Strings.SavingProgressFormat,
+                    writtenStr, totalStr);
+            });
+
+            await Task.Run(() =>
+            {
+                using var fs = new FileStream(tmpPath, FileMode.Create, FileAccess.Write,
+                    FileShare.None, bufferSize: 65536);
+
+                if (hasBom)
+                {
+                    byte[] bom = encoding.GetPreamble();
+                    if (bom.Length > 0)
+                        fs.Write(bom, 0, bom.Length);
+                }
+
+                WriteDocumentChunked(document, fs, encoding, le, progress);
+            });
+
+            // Validate: the written file must not be drastically smaller than
+            // the original.  A truncated write (e.g. from corrupted piece data)
+            // would silently destroy the user's file on the swap below.
+            long originalFileSize = new FileInfo(tab.FilePath).Length;
+            long writtenSize = new FileInfo(tmpPath).Length;
+            if (originalFileSize > 0 && writtenSize < originalFileSize / 2)
+            {
+                try { File.Delete(tmpPath); } catch { }
+                tab.Editor.IsReadOnly = false;
+                CloseEditorOverlay(overlayForm, dialogForm);
+                MessageBox.Show(
+                    $"Save aborted: the written file ({StatusBarManager.FormatFileSize(writtenSize)}) " +
+                    $"is much smaller than the original ({StatusBarManager.FormatFileSize(originalFileSize)}). " +
+                    $"This likely indicates a bug — your original file has been preserved.",
+                    Strings.AppTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+
+            // 2. Save editor state before disposing the document.
+            long savedScroll = tab.Editor.ScrollMgr.FirstVisibleLine;
+            long savedCaret = tab.Editor.CaretOffset;
+
+            // 3. Release the MMF by replacing the document with an empty one.
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+            tab.Editor.Document = new PieceTable(string.Empty);
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+
+            // 4. Now the original file is unlocked — suppress watcher and swap.
+            _fileWatcher.SuppressNextChange(tab.FilePath);
+            File.Move(tmpPath, tab.FilePath, overwrite: true);
+
+            // 5. Reload asynchronously from the saved file (new MMF).
+            long fileSize = new FileInfo(tab.FilePath).Length;
+            progressLabel.Text = Strings.ReloadingAfterSave;
+            progressBar.Value = 0;
+            tab.IsLoading = true; // block recovery timer during reload
+
+            var source = await Task.Run(() =>
+                new MemoryMappedFileSource(tab.FilePath, normalizeLineEndings: true, deferScan: true));
+
+            const int FirstBatchChunks = 128;
+            const int SubsequentBatchChunks = 2048;
+            int batchSize = FirstBatchChunks;
+            bool done = false;
+            long[]? ownedLineOffsets = null;
+
+            // Keep painting suppressed for the entire reload — the overlay
+            // shows progress and prevents interaction.  A single repaint
+            // happens after the overlay is removed.
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+
+            while (!done)
+            {
+                done = await Task.Run(() =>
+                {
+                    bool d = source.ScanNextBatch(batchSize);
+                    // Clone line offsets on final batch to avoid shared-array
+                    // corruption when edits later modify the cache in-place.
+                    if (d && source.LineOffsets is { } lo)
+                        ownedLineOffsets = (long[])lo.Clone();
+                    return d;
+                });
+
+                if (!_tabs.Contains(tab))
+                {
+                    source.Dispose();
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                    CloseEditorOverlay(overlayForm, dialogForm);
+                    return;
+                }
+
+                ITextSource textSource = done
+                    ? source
+                    : new BorrowedTextSource(source);
+
+                tab.Editor.Document = new PieceTable(textSource);
+
+                // Set owned line offset cache to avoid O(N²) lazy rebuild
+                // and shared-array corruption with the MMF source.
+                if (done && ownedLineOffsets is not null)
+                    tab.Editor.Document.SetLineOffsetCache(ownedLineOffsets);
+
+                tab.Editor.FileSizeBytes = source.ScannedBytes;
+
+                if (fileSize > 0)
+                {
+                    int permille = (int)(source.ScannedBytes * 1000 / fileSize);
+                    progressBar.Value = Math.Min(permille, 1000);
+                    string scannedStr = StatusBarManager.FormatFileSize(source.ScannedBytes);
+                    string totalStr = StatusBarManager.FormatFileSize(fileSize);
+                    progressLabel.Text = string.Format(Strings.ReloadingProgressFormat,
+                        scannedStr, totalStr);
+                }
+
+                UpdateStatusBar();
+
+                if (!done)
+                    batchSize = SubsequentBatchChunks;
+            }
+
+            // Resume painting and remove the overlay.
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            CloseEditorOverlay(overlayForm, dialogForm);
+
+            // 6. Restore state.
+            tab.IsLoading = false;
+            tab.Editor.FileSizeBytes = fileSize;
+            tab.Editor.EncodingManager = new EncodingManager(encoding, hasBom);
+            tab.Editor.LineEnding = le;
+            tab.Editor.IsMemoryMappedDocument = true;
+            tab.Editor.IsReadOnly = false;
+
+            long docLen = tab.Editor.Document.Length;
+            if (savedCaret > 0 && savedCaret <= docLen)
+                tab.Editor.CaretOffset = savedCaret;
+            tab.Editor.ScrollMgr.ScrollToLine(Math.Min(savedScroll, docLen));
+
+            tab.Editor.Invalidate(true);
+
+            tab.IsModified = false;
+            _recoveryManager.RemoveTabRecovery(tab.Id);
+            RefreshTabDisplay(tab);
+            UpdateTitleBar();
+            UpdateStatusBar();
+
+            _pluginHost.RaiseDocumentSaved(tab.FilePath);
+        }
+        catch (Exception ex)
+        {
+            SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            CloseEditorOverlay(overlayForm, dialogForm);
+
+            if (File.Exists(tmpPath))
+            {
+                try { File.Delete(tmpPath); } catch { /* best effort */ }
+            }
+
+            tab.IsLoading = false;
+            tab.Editor.IsReadOnly = false;
+            tab.Editor.Invalidate(true);
+
+            MessageBox.Show(
+                string.Format(Strings.ErrorSavingFile, tab.FilePath, ex.Message),
+                Strings.AppTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// Writes a <see cref="PieceTable"/> to a stream in 1 MB chunks with line
+    /// ending conversion.  Safe to call from a background thread when no
+    /// concurrent writes are happening to the document.
+    /// </summary>
+    private static void WriteDocumentChunked(PieceTable document, FileStream fs,
+        Encoding encoding, string lineEnding, IProgress<long>? progress = null)
+    {
+        const int ChunkSize = 1024 * 1024;
+        long docLength = document.Length;
+        long offset = 0;
+
+        while (offset < docLength)
+        {
+            long remaining = docLength - offset;
+            int take = (int)Math.Min(remaining, ChunkSize);
+
+            string chunk = document.GetText(offset, take);
+
+            if (chunk.Contains('\r'))
+                chunk = chunk.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            if (lineEnding == "CRLF")
+                chunk = chunk.Replace("\n", "\r\n");
+            else if (lineEnding == "CR")
+                chunk = chunk.Replace("\n", "\r");
+
+            byte[] bytes = encoding.GetBytes(chunk);
+            fs.Write(bytes, 0, bytes.Length);
+
+            offset += take;
+            progress?.Report(offset);
+        }
+    }
+
+    /// <summary>
+    /// Creates two Forms over the editor: a semi-transparent overlay for the
+    /// dimming effect, and a small opaque dialog with themed progress controls.
+    /// The overlay uses <see cref="Form.Opacity"/> so the text behind it stays
+    /// visible.  Only this editor is blocked — other tabs remain interactive.
+    /// </summary>
+    private (Form Overlay, Form Dialog, Label Label, ProgressBar Bar) CreateEditorOverlay(
+        EditorControl editor, Bascanka.Editor.Themes.ITheme theme)
+    {
+        var screenBounds = editor.RectangleToScreen(editor.ClientRectangle);
+
+        // Semi-transparent layer that dims the editor text.
+        var overlay = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            BackColor = Color.Black,
+            Opacity = 0.35,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = screenBounds.Location,
+            ClientSize = screenBounds.Size,
+        };
+
+        // Small opaque dialog with progress controls, themed background.
+        const int dlgWidth = 440;
+        const int dlgHeight = 70;
+        int pad = 10;
+
+        // Border color: blend foreground toward background for a subtle edge.
+        Color borderColor = Color.FromArgb(
+            (theme.EditorForeground.R + theme.EditorBackground.R) / 2,
+            (theme.EditorForeground.G + theme.EditorBackground.G) / 2,
+            (theme.EditorForeground.B + theme.EditorBackground.B) / 2);
+
+        var dialog = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            ClientSize = new Size(dlgWidth, dlgHeight),
+            BackColor = theme.EditorBackground,
+        };
+
+        // Draw a 1px border around the dialog.
+        dialog.Paint += (_, e) =>
+        {
+            using var pen = new Pen(borderColor);
+            e.Graphics.DrawRectangle(pen, 0, 0,
+                dialog.ClientSize.Width - 1, dialog.ClientSize.Height - 1);
+        };
+
+        var label = new Label
+        {
+            Text = string.Format(Strings.SavingProgressFormat, "0 B", "0 B"),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(pad, 4),
+            Size = new Size(dlgWidth - pad * 2, 25),
+            BackColor = theme.EditorBackground,
+            ForeColor = theme.EditorForeground,
+        };
+
+        var bar = new ProgressBar
+        {
+            Style = ProgressBarStyle.Continuous,
+            Minimum = 0,
+            Maximum = 1000,
+            Location = new Point(pad, 32),
+            Size = new Size(dlgWidth - pad * 2, 28),
+        };
+
+        dialog.Controls.Add(label);
+        dialog.Controls.Add(bar);
+
+        // Center the dialog on the overlay / editor area.
+        void centerDialog()
+        {
+            if (overlay.IsDisposed) return;
+            dialog.Location = new Point(
+                overlay.Left + (overlay.Width - dlgWidth) / 2,
+                overlay.Top + (overlay.Height - dlgHeight) / 2);
+        }
+
+        // Follow editor position/size changes.
+        void syncPosition(object? s, EventArgs e)
+        {
+            if (!editor.IsHandleCreated || overlay.IsDisposed) return;
+            var bounds = editor.RectangleToScreen(editor.ClientRectangle);
+            overlay.Location = bounds.Location;
+            overlay.ClientSize = bounds.Size;
+            centerDialog();
+        }
+        editor.SizeChanged += syncPosition;
+        editor.LocationChanged += syncPosition;
+
+        // Also follow main form move/resize.
+        this.LocationChanged += syncPosition;
+
+        // Hide both forms when this tab is not visible; show when it is.
+        editor.VisibleChanged += (_, _) =>
+        {
+            if (!overlay.IsDisposed) overlay.Visible = editor.Visible;
+            if (!dialog.IsDisposed) dialog.Visible = editor.Visible;
+        };
+
+        overlay.Show(this);
+        centerDialog();
+        dialog.Show(this);
+
+        return (overlay, dialog, label, bar);
+    }
+
+    /// <summary>
+    /// Closes and disposes both overlay and dialog Forms.
+    /// </summary>
+    private static void CloseEditorOverlay(Form overlay, Form dialog)
+    {
+        if (!dialog.IsDisposed) { dialog.Close(); dialog.Dispose(); }
+        if (!overlay.IsDisposed) { overlay.Close(); overlay.Dispose(); }
+    }
+
     private void WireEditorEvents(EditorControl editor)
     {
+        editor.ContextMenuRenderer = t => new ThemedMenuRenderer(t);
+        editor.ApplyContextMenuTheme();
         editor.ContentChanged += OnEditorContentChanged;
         editor.CaretPositionChanged += OnEditorCaretPositionChanged;
         editor.SelectionChanged += OnEditorSelectionChanged;
@@ -2074,6 +2943,8 @@ public sealed class MainForm : Form
             RefreshTabDisplay(tab);
             UpdateTitleBar();
         }
+
+        _recoveryManager.MarkDirty(tab.Id);
 
         // Forward text change events to plugins.
         _pluginHost.RaiseTextChanged(0, 0, 0);
@@ -2236,6 +3107,9 @@ public sealed class MainForm : Form
             _findResultsPanel.Theme = ThemeManager.Instance.CurrentTheme;
             _findResultsPanel.AddSearchResults(allResults, e.Options.Pattern,
                 Strings.ScopeAllOpenTabs, multiFile: true);
+            EnsureFindResultsTab();
+            _bottomTabStrip.SelectTab("findResults");
+            ShowSelectedBottomTab();
             IsBottomPanelVisible = true;
             _menuBuilder.UpdateMenuState(this);
         }
@@ -2350,6 +3224,11 @@ public sealed class MainForm : Form
         // ── Find results panel ────────────────────────────────────────
         _findResultsPanel.Theme = theme;
 
+        // ── Bottom panel tab strip and terminal ─────────────────────
+        _bottomTabStrip.Theme = theme;
+        if (_terminalPanel is not null)
+            _terminalPanel.Theme = theme;
+
         // ── Symbol list panel ────────────────────────────────────────
         _symbolListPanel.Theme = theme;
 
@@ -2371,6 +3250,7 @@ public sealed class MainForm : Form
         _shortcutManager.RegisterShortcut("PlayMacro", Keys.F5, ctrl: false, shift: false, alt: false, PlayMacro);
         _shortcutManager.RegisterShortcut("FullScreen", Keys.F11, ctrl: false, shift: false, alt: false, ToggleFullScreen);
         _shortcutManager.RegisterShortcut("CommandPalette", Keys.P, ctrl: true, shift: true, alt: false, ShowCommandPalette);
+        _shortcutManager.RegisterShortcut("Terminal", Keys.Oemtilde, ctrl: true, shift: false, alt: false, ToggleTerminal);
     }
 
     private void ApplyLocalizedMenuTexts()
@@ -2394,6 +3274,11 @@ public sealed class MainForm : Form
             Strings.FindResultsHeaderFormat,
             Strings.FindResultMatchFormat,
             Strings.FindResultMatchFilesFormat);
+
+        // Update bottom panel tab titles.
+        _bottomTabStrip.SetTabTitle("findResults", Strings.FindResultsHeader);
+        if (_bottomTabStrip.HasTab("terminal"))
+            _bottomTabStrip.SetTabTitle("terminal", Strings.MenuTerminal.Replace("&", ""));
 
         // Update all open editor context menus.
         foreach (var tab in _tabs)
@@ -2510,6 +3395,11 @@ public sealed class MainForm : Form
     private static long LargeFileThreshold { get; set; } = 10L * 1024 * 1024;
 
     /// <summary>
+    /// Auto-save interval for crash recovery, in seconds. Configurable via Settings.
+    /// </summary>
+    internal static int ConfigAutoSaveIntervalSeconds { get; set; } = RecoveryManager.DefaultIntervalSeconds;
+
+    /// <summary>
     /// Detects whether a file is binary by checking for null bytes
     /// in the first 8 KB of the content. Files with a UTF-16/UTF-32
     /// BOM are not considered binary.
@@ -2605,6 +3495,7 @@ public sealed class MainForm : Form
         _recentFilesManager.AddFile(path);
         _menuBuilder.RefreshRecentFilesMenu(this);
         _fileWatcher.Watch(tab);
+        tab.IsLoading = true;
 
         try
         {
@@ -2622,7 +3513,18 @@ public sealed class MainForm : Form
 
             while (!done)
             {
-                done = await Task.Run(() => source.ScanNextBatch(batchSize));
+                // Clone line offsets on the background thread for the final batch
+                // so the PieceTable owns its cache.  Without a separate copy,
+                // in-place shifts in UpdateLineOffsetCache corrupt the
+                // MemoryMappedFileSource's immutable _lineOffsets array.
+                long[]? ownedLineOffsets = null;
+                done = await Task.Run(() =>
+                {
+                    bool d = source.ScanNextBatch(batchSize);
+                    if (d && source.LineOffsets is { } lo)
+                        ownedLineOffsets = (long[])lo.Clone();
+                    return d;
+                });
 
                 // Stop if tab was closed while scanning.
                 if (!_tabs.Contains(tab))
@@ -2638,30 +3540,44 @@ public sealed class MainForm : Form
                 long savedSelStart = selMgr.SelectionStart;
                 long savedSelEnd = selMgr.SelectionEnd;
 
-                // Intermediate swaps use a non-owning wrapper so disposing
-                // the old PieceTable won't release the shared MMF source.
-                // The final swap gives ownership to the PieceTable.
                 ITextSource textSource = done
                     ? source
                     : new BorrowedTextSource(source);
 
-                tab.Editor.Document = new PieceTable(textSource);
+                // Suppress painting during document swap to avoid blinking.
+                SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                try
+                {
+                    tab.Editor.Document = new PieceTable(textSource);
+
+                    // Replace the shared cache with the owned clone so edits
+                    // don't corrupt the source's line offsets.
+                    if (ownedLineOffsets is not null)
+                        tab.Editor.Document.SetLineOffsetCache(ownedLineOffsets);
+
+                    // Restore caret BEFORE scroll so that the scroll position
+                    // the user is actually looking at wins over EnsureVisible.
+                    long docLen = tab.Editor.Document.Length;
+                    if (hadSelection && savedSelStart < docLen)
+                    {
+                        long clampedEnd = Math.Min(savedSelEnd, docLen);
+                        tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
+                    }
+                    else if (savedCaret > 0 && savedCaret <= docLen)
+                    {
+                        tab.Editor.CaretOffset = savedCaret;
+                    }
+
+                    tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
+                }
+                finally
+                {
+                    SendMessage(tab.Editor.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                    tab.Editor.Invalidate(true);
+                }
+
                 tab.Editor.FileSizeBytes = source.ScannedBytes;
-                tab.Editor.ScrollMgr.ScrollToLine(savedScroll);
-
-                // Restore caret and selection if still within bounds.
-                long docLen = tab.Editor.Document.Length;
-                if (hadSelection && savedSelStart < docLen)
-                {
-                    long clampedEnd = Math.Min(savedSelEnd, docLen);
-                    tab.Editor.Select(savedSelStart, (int)(clampedEnd - savedSelStart));
-                }
-                else if (savedCaret > 0 && savedCaret <= docLen)
-                {
-                    tab.Editor.CaretOffset = savedCaret;
-                }
-
-                UpdateStatusBar();
+                _statusBarManager.ShowLoadingProgress(source.ScannedBytes, fileSize);
 
                 if (!done)
                     batchSize = SubsequentBatchChunks;
@@ -2672,7 +3588,9 @@ public sealed class MainForm : Form
             tab.Editor.EncodingManager = new EncodingManager(source.Encoding,
                 source.Encoding.GetPreamble().Length > 0);
             tab.Editor.LineEnding = source.DetectedLineEnding;
+            tab.Editor.IsMemoryMappedDocument = true;
             tab.Editor.IsReadOnly = false;
+            tab.IsLoading = false;
 
             if (lexer is not null)
                 tab.Editor.SetLexer(lexer);

@@ -44,6 +44,20 @@ public sealed class CaretManager : IDisposable
     public Func<long, long, long>? LineColumnToVisibleRow { get; set; }
 
     /// <summary>
+    /// When word-wrap is active, navigates caret up by visual wrap rows
+    /// instead of document lines. Parameters: (currentLine, currentColumn, desiredColumn).
+    /// Returns (newLine, newColumn), or null to fall back to default behavior.
+    /// </summary>
+    public Func<long, long, long, (long Line, long Column)?>? WrapMoveUp { get; set; }
+
+    /// <summary>
+    /// When word-wrap is active, navigates caret down by visual wrap rows
+    /// instead of document lines. Parameters: (currentLine, currentColumn, desiredColumn).
+    /// Returns (newLine, newColumn), or null to fall back to default behavior.
+    /// </summary>
+    public Func<long, long, long, (long Line, long Column)?>? WrapMoveDown { get; set; }
+
+    /// <summary>
     /// Maps (docLine, charColumn) to the expanded visual column, accounting
     /// for tabs and fullwidth (CJK) characters. Used by <see cref="EnsureVisible"/>
     /// for correct horizontal scrolling.
@@ -124,38 +138,154 @@ public sealed class CaretManager : IDisposable
     //  Relative movement
     // ────────────────────────────────────────────────────────────────────
 
-    /// <summary>Moves the caret one character to the left.</summary>
+    /// <summary>Moves the caret one character to the left, skipping over surrogate pairs.</summary>
     public void MoveLeft()
     {
         if (_document is null || _offset == 0) return;
-        MoveTo(_offset - 1);
+        long newOffset = _offset;
+
+        do
+        {
+            newOffset--;
+            if (newOffset <= 0) { newOffset = 0; break; }
+
+            // Skip BMP zero-width characters (ZWJ, variation selectors) going backwards.
+            while (newOffset > 0 && IsZeroWidthChar(_document.GetCharAt(newOffset)))
+                newOffset--;
+
+            // If we landed on a low surrogate, skip back to the high surrogate.
+            if (newOffset > 0 && char.IsLowSurrogate(_document.GetCharAt(newOffset)))
+                newOffset--;
+        }
+        while (newOffset > 0 && (IsSkinToneModifierAt(newOffset) || IsSecondRegionalIndicatorAt(newOffset)));
+
+        MoveTo(newOffset);
     }
 
-    /// <summary>Moves the caret one character to the right.</summary>
+    /// <summary>Moves the caret one character to the right, skipping over surrogate pairs.</summary>
     public void MoveRight()
     {
         if (_document is null || _offset >= _document.Length) return;
-        MoveTo(_offset + 1);
+        long newOffset = _offset + 1;
+        // If we were on a high surrogate, skip the low surrogate too.
+        if (char.IsHighSurrogate(_document.GetCharAt(_offset)) && newOffset < _document.Length)
+            newOffset++;
+        // Skip over any following zero-width characters (BMP and supplementary).
+        while (newOffset < _document.Length)
+        {
+            if (IsZeroWidthChar(_document.GetCharAt(newOffset)))
+            {
+                newOffset++;
+                continue;
+            }
+            if (IsSkinToneModifierAt(newOffset))
+            {
+                newOffset += 2;
+                continue;
+            }
+            if (IsSecondRegionalIndicatorAt(newOffset))
+            {
+                newOffset += 2;
+                continue;
+            }
+            break;
+        }
+        MoveTo(newOffset);
+    }
+
+    private static bool IsZeroWidthChar(char c) =>
+        c == '\u200B' || c == '\u200C' || c == '\u200D' ||
+        c == '\uFE0E' || c == '\uFE0F' || c == '\u2060' || c == '\uFEFF' ||
+        c == '\u20E3' ||
+        (c >= '\u0300' && c <= '\u036F') ||  // Combining Diacritical Marks
+        (c >= '\u0483' && c <= '\u0489') ||  // Combining Cyrillic
+        (c >= '\u1AB0' && c <= '\u1AFF') ||  // Combining Diacritical Marks Extended
+        (c >= '\u1DC0' && c <= '\u1DFF') ||  // Combining Diacritical Marks Supplement
+        (c >= '\u20D0' && c <= '\u20FF') ||  // Combining Diacritical Marks for Symbols
+        (c >= '\uFE20' && c <= '\uFE2F');    // Combining Half Marks
+
+    /// <summary>
+    /// Returns true if the surrogate pair at <paramref name="offset"/> is a
+    /// skin tone modifier (U+1F3FB–U+1F3FF), which should be treated as zero-width.
+    /// </summary>
+    private bool IsSkinToneModifierAt(long offset)
+    {
+        if (_document is null || offset + 1 >= _document.Length) return false;
+        char hi = _document.GetCharAt(offset);
+        if (!char.IsHighSurrogate(hi)) return false;
+        char lo = _document.GetCharAt(offset + 1);
+        if (!char.IsLowSurrogate(lo)) return false;
+        int cp = char.ConvertToUtf32(hi, lo);
+        return cp >= 0x1F3FB && cp <= 0x1F3FF;
+    }
+
+    /// <summary>
+    /// Returns true if the surrogate pair at <paramref name="offset"/> is the
+    /// second Regional Indicator in a flag pair (e.g. 🇧 in 🇬🇧).
+    /// Counts consecutive preceding Regional Indicators to determine pairing.
+    /// </summary>
+    private bool IsSecondRegionalIndicatorAt(long offset)
+    {
+        if (_document is null || offset + 1 >= _document.Length || offset < 2) return false;
+        char hi = _document.GetCharAt(offset);
+        if (!char.IsHighSurrogate(hi)) return false;
+        char lo = _document.GetCharAt(offset + 1);
+        if (!char.IsLowSurrogate(lo)) return false;
+        int cp = char.ConvertToUtf32(hi, lo);
+        if (cp < 0x1F1E0 || cp > 0x1F1FF) return false;
+
+        // Count consecutive preceding Regional Indicators.
+        int riCount = 0;
+        long j = offset;
+        while (j >= 2)
+        {
+            j -= 2;
+            char prevHi = _document.GetCharAt(j);
+            char prevLo = _document.GetCharAt(j + 1);
+            if (!char.IsHighSurrogate(prevHi) || !char.IsLowSurrogate(prevLo)) break;
+            int prevCp = char.ConvertToUtf32(prevHi, prevLo);
+            if (prevCp < 0x1F1E0 || prevCp > 0x1F1FF) break;
+            riCount++;
+        }
+        return riCount % 2 == 1;
     }
 
     /// <summary>Moves the caret one line up, preserving the desired column.</summary>
     public void MoveUp()
     {
-        if (_document is null || _line == 0) return;
+        if (_document is null) return;
 
         if (_desiredColumn < 0) _desiredColumn = _column;
 
-        long newLine = _line - 1;
+        // Word-wrap: navigate by visual wrap rows.
+        if (WrapMoveUp is not null)
+        {
+            var result = WrapMoveUp(_line, _column, _desiredColumn);
+            if (result is not null)
+            {
+                var (newLine, newCol) = result.Value;
+                _line = newLine;
+                _column = newCol;
+                _offset = _document.LineColumnToOffset(newLine, newCol);
+                ResetBlink();
+                CaretMoved?.Invoke(_offset);
+                return;
+            }
+        }
 
-        if (Folding is not null && !Folding.IsLineVisible(newLine))
-            newLine = Folding.NextVisibleLine(newLine, _document.LineCount, forward: false);
+        if (_line == 0) return;
 
-        long lineLen = _document.GetLineLength(newLine);
+        long targetLine = _line - 1;
+
+        if (Folding is not null && !Folding.IsLineVisible(targetLine))
+            targetLine = Folding.NextVisibleLine(targetLine, _document.LineCount, forward: false);
+
+        long lineLen = _document.GetLineLength(targetLine);
         long col = Math.Min(_desiredColumn, lineLen);
 
-        _line = newLine;
+        _line = targetLine;
         _column = col;
-        _offset = _document.LineColumnToOffset(newLine, col);
+        _offset = _document.LineColumnToOffset(targetLine, col);
         ResetBlink();
         CaretMoved?.Invoke(_offset);
     }
@@ -163,23 +293,41 @@ public sealed class CaretManager : IDisposable
     /// <summary>Moves the caret one line down, preserving the desired column.</summary>
     public void MoveDown()
     {
-        if (_document is null || _line >= _document.LineCount - 1) return;
+        if (_document is null) return;
 
         if (_desiredColumn < 0) _desiredColumn = _column;
 
-        long newLine = _line + 1;
+        // Word-wrap: navigate by visual wrap rows.
+        if (WrapMoveDown is not null)
+        {
+            var result = WrapMoveDown(_line, _column, _desiredColumn);
+            if (result is not null)
+            {
+                var (newLine, newCol) = result.Value;
+                _line = newLine;
+                _column = newCol;
+                _offset = _document.LineColumnToOffset(newLine, newCol);
+                ResetBlink();
+                CaretMoved?.Invoke(_offset);
+                return;
+            }
+        }
 
-        if (Folding is not null && !Folding.IsLineVisible(newLine))
-            newLine = Folding.NextVisibleLine(newLine, _document.LineCount, forward: true);
+        if (_line >= _document.LineCount - 1) return;
 
-        if (newLine >= _document.LineCount) return;
+        long targetLine = _line + 1;
 
-        long lineLen = _document.GetLineLength(newLine);
+        if (Folding is not null && !Folding.IsLineVisible(targetLine))
+            targetLine = Folding.NextVisibleLine(targetLine, _document.LineCount, forward: true);
+
+        if (targetLine >= _document.LineCount) return;
+
+        long lineLen = _document.GetLineLength(targetLine);
         long col = Math.Min(_desiredColumn, lineLen);
 
-        _line = newLine;
+        _line = targetLine;
         _column = col;
-        _offset = _document.LineColumnToOffset(newLine, col);
+        _offset = _document.LineColumnToOffset(targetLine, col);
         ResetBlink();
         CaretMoved?.Invoke(_offset);
     }

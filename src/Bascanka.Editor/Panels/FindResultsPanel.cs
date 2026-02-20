@@ -172,13 +172,28 @@ public class FindResultsPanel : UserControl
 
     // ── Public API ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// Gets or sets whether the built-in header panel is visible.
+    /// Set to <c>false</c> when the panel is hosted inside a tab strip
+    /// that already provides a title and close button.
+    /// </summary>
+    public bool ShowHeader
+    {
+        get => _headerPanel.Visible;
+        set => _headerPanel.Visible = value;
+    }
+
     /// <summary>The theme used for rendering panel colours.</summary>
+    public Func<ITheme, ToolStripRenderer>? ContextMenuRenderer { get; set; }
+
     public ITheme? Theme
     {
         get => _theme;
         set
         {
             _theme = value;
+            if (value is not null && ContextMenuRenderer is not null)
+                _contextMenu.Renderer = ContextMenuRenderer(value);
             ApplyTheme();
         }
     }

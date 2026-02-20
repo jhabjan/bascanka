@@ -109,7 +109,6 @@ public sealed class EncodingManager
     /// </summary>
     private static IReadOnlyList<System.Text.Encoding> BuildSupportedEncodings()
     {
-
         return new List<System.Text.Encoding>
         {
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),   // UTF-8

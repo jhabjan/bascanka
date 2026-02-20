@@ -71,6 +71,7 @@
     "MenuFullScreen": "全屏(&F)",
     "MenuSymbolList": "符号列表(&S)",
     "MenuFindResults": "查找结果(&R)",
+    "MenuFolding": "折叠(&F)",
     "MenuToggleFold": "切换折叠(&F)",
     "MenuFoldAll": "全部折叠(&L)",
     "MenuUnfoldAll": "全部展开(&U)",
@@ -90,6 +91,7 @@
     "DiffNoDifferences": "文件相同。",
     "CompareSelectFirstFile": "选择要比较的第一个文件",
     "CompareSelectSecondFile": "选择要比较的第二个文件",
+    "MenuOpenAppData": "打开应用数据文件夹(&A)",
     "MenuSettings": "设置(&E)...",
 
     "MenuPlugins": "插件(&U)",
@@ -125,11 +127,20 @@
 
     "CommandPaletteNotYetImplemented": "命令面板将在未来版本中可用。",
 
+    "SavingProgressFormat": "保存中\u2026 {0} / {1}",
+    "ReloadingAfterSave": "重新加载文件\u2026",
+    "ReloadingProgressFormat": "重新加载中\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "缩放: {0}%",
 
     "SettingsTitle": "设置",
-    "SettingsExplorerContextMenu": "在 Windows 资源管理器右键菜单中注册 \"用 Bascanka 编辑\"",
+    "ContextMenuEditWith": "用 Bascanka 编辑",
+    "SettingsExplorerContextMenu": "在旧版 Windows 资源管理器右键菜单中注册 \"用 Bascanka 编辑\"",
     "SettingsExplorerContextMenuDesc": "在 Windows 资源管理器中添加右键选项以用 Bascanka 打开文件。",
+    "SettingsNewExplorerContextMenu": "在现代版 Windows 资源管理器右键菜单中注册 \"用 Bascanka 编辑\"（需要重启资源管理器）",
+    "SettingsNewExplorerContextMenuDesc": "在新版资源管理器右键菜单中直接显示 \"用 Bascanka 编辑\"，无需点击 \"显示更多选项\"。",
+    "SettingsNewExplorerContextMenuError": "注册新版资源管理器右键菜单失败: {0}",
+    "SettingsNewExplorerRestartExplorer": "需要重启 Windows 资源管理器以使更改生效。现在重启吗？",
 
     "SettingsCategoryEditor": "编辑器",
     "SettingsCategoryDisplay": "显示",
@@ -179,8 +190,14 @@
     "SettingsTabHeightUnit": "px",
     "SettingsMinTabWidth": "最小标签宽度",
     "SettingsMinTabWidthUnit": "px",
+    "SettingsMenuItemPadding": "菜单项间距",
+    "SettingsMenuItemPaddingUnit": "px",
+    "SettingsTerminalPadding": "终端内边距",
+    "SettingsTerminalPaddingUnit": "px",
     "SettingsSearchDebounce": "搜索防抖",
     "SettingsSearchDebounceUnit": "ms",
+    "SettingsAutoSaveInterval": "自动保存间隔",
+    "SettingsAutoSaveIntervalUnit": "s",
 
     "SettingsCategoryAppearance": "外观",
 
@@ -194,6 +211,8 @@
     "SettingsThemeDesc": "编辑器 UI 的整体配色方案。",
     "SettingsUILanguage": "界面语言",
     "SettingsUILanguageDesc": "用于菜单、对话框和标签的语言。",
+    "SettingsRecentFilesSeparated": "分列显示最近文件",
+    "SettingsRecentFilesSeparatedDesc": "将最近文件的目录和文件名分列显示。",
 
     "SettingsCaretBlinkRateDesc": "光标可见性切换之间的毫秒间隔。",
     "SettingsTextLeftPaddingDesc": "装订线和第一个字符之间的水平填充。",
@@ -208,12 +227,15 @@
     "SettingsTabHeightDesc": "标签栏条的高度（像素）。",
     "SettingsMaxTabWidthDesc": "单个标签的最大像素宽度。",
     "SettingsMinTabWidthDesc": "单个标签的最小像素宽度。",
+    "SettingsMenuItemPaddingDesc": "菜单项的垂直间距（像素）。",
+    "SettingsTerminalPaddingDesc": "终端面板的内边距（像素）。",
 
     "SettingsLargeFileThresholdDesc": "超过此大小的文件使用内存映射 I/O 以提高性能。",
     "SettingsFoldingMaxFileSizeDesc": "对于大于此大小的文件，代码折叠被禁用。",
     "SettingsMaxRecentFilesDesc": "打开最近列表中的最大条目数。",
     "SettingsSearchHistoryLimitDesc": "查找面板中保存的最大搜索词数。",
     "SettingsSearchDebounceDesc": "键入后实时搜索开始前的延迟。",
+    "SettingsAutoSaveIntervalDesc": "未保存更改备份用于崩溃恢复的频率。",
 
     "SettingsColorCustomization": "颜色自定义",
     "SettingsColorReset": "重置",
@@ -325,6 +347,14 @@
     "CustomHighlightNewProfile": "新配置文件",
     "CustomHighlightEndPattern": "结束模式",
     "CustomHighlightFoldable": "可折叠",
-    "CustomHighlightScopeBlock": "块"
+    "CustomHighlightScopeBlock": "块",
+    "CustomHighlightExport": "导出...",
+    "CustomHighlightImport": "导入...",
+    "CustomHighlightExportSuccess": "配置文件导出成功。",
+    "CustomHighlightExportEmpty": "没有可导出的配置文件。",
+    "CustomHighlightImportSuccess": "成功导入 {0} 个配置文件。",
+    "CustomHighlightImportError": "所选文件不包含有效的高亮配置文件。",
+    "CustomHighlightPickColor": "选择颜色...",
+    "CustomHighlightClearColor": "清除颜色"
   }
 }

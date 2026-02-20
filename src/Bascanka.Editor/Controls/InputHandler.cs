@@ -852,7 +852,7 @@ public sealed class InputHandler
         {
             if (line >= _document.LineCount) continue;
 
-            string lineText = _document.GetLine(line);
+            string lineText = StripTrailingCR(_document.GetLine(line));
             long lineStart = _document.GetLineStartOffset(line);
 
             // Convert expanded (visual) columns to character indices for this line.
@@ -890,16 +890,32 @@ public sealed class InputHandler
             _history.Execute(composite);
         }
 
-        // Advance the column cursor so subsequent typing continues in column mode.
-        int newExpCol = leftExpCol + text.Length;
+        // Advance the column cursor by the visual width of the inserted text.
+        int insertVisualWidth = 0;
+        for (int i = 0; i < text.Length; i++)
+            insertVisualWidth += EditorSurface.GetCharDisplayWidth(text, i);
+        int newExpCol = leftExpCol + insertVisualWidth;
         _selection.StartColumnSelection(startLine, newExpCol);
         _selection.ExtendColumnSelection(endLine, newExpCol);
 
         // Move caret to the character position on the first line.
-        string newLineText = _document.GetLine(startLine);
+        string newLineText = StripTrailingCR(_document.GetLine(startLine));
         int caretCharCol = SelectionManager.CompressedColumnAt(newLineText, newExpCol, _tabSize);
         _caret.MoveToLineColumn(startLine, caretCharCol);
         TextModified?.Invoke();
+    }
+
+    /// <summary>
+    /// Strips a trailing '\r' from line text so that column calculations
+    /// are based on visible characters only. For CRLF files, <see cref="PieceTable.GetLine"/>
+    /// returns line text including '\r', which would otherwise be counted
+    /// as a visible column and corrupt line endings during column edits.
+    /// </summary>
+    private static string StripTrailingCR(string lineText)
+    {
+        if (lineText.Length > 0 && lineText[^1] == '\r')
+            return lineText[..^1];
+        return lineText;
     }
 
     /// <summary>
@@ -914,7 +930,7 @@ public sealed class InputHandler
             if (lineText[i] == '\t')
                 col += _tabSize - (col % _tabSize);
             else
-                col++;
+                col += EditorSurface.GetCharDisplayWidth(lineText, i);
         }
         return col;
     }
@@ -940,7 +956,7 @@ public sealed class InputHandler
         {
             if (line >= _document.LineCount) continue;
 
-            string lineText = _document.GetLine(line);
+            string lineText = StripTrailingCR(_document.GetLine(line));
             long lineStart = _document.GetLineStartOffset(line);
 
             int charLeft = SelectionManager.CompressedColumnAt(lineText, leftExpCol, _tabSize);
@@ -959,9 +975,13 @@ public sealed class InputHandler
         }
 
         long caretCharCol = SelectionManager.CompressedColumnAt(
-            _document.GetLine(startLine), leftExpCol, _tabSize);
+            StripTrailingCR(_document.GetLine(startLine)), leftExpCol, _tabSize);
         _caret.MoveToLineColumn(startLine, caretCharCol);
-        _selection.ClearSelection();
+
+        // Stay in column mode with a zero-width selection at the left edge
+        // so the user can continue typing/deleting in column mode.
+        _selection.StartColumnSelection(startLine, leftExpCol);
+        _selection.ExtendColumnSelection(endLine, leftExpCol);
         TextModified?.Invoke();
     }
 
@@ -981,17 +1001,28 @@ public sealed class InputHandler
         if (expCol == 0) return; // Nothing to delete before column 0.
 
         var commands = new List<ICommand>();
+        int deletedVisualWidth = 0;
 
         for (long line = endLine; line >= startLine; line--)
         {
             if (line >= _document.LineCount) continue;
 
-            string lineText = _document.GetLine(line);
+            string lineText = StripTrailingCR(_document.GetLine(line));
             int charCol = SelectionManager.CompressedColumnAt(lineText, expCol, _tabSize);
 
             if (charCol > 0 && charCol <= lineText.Length)
             {
-                commands.Add(new DeleteCommand(_document, _document.GetLineStartOffset(line) + charCol - 1, 1));
+                // Determine how many code units to delete (2 for surrogate pair, 1 otherwise).
+                int deleteLen = 1;
+                int deleteStart = charCol - 1;
+                if (deleteStart > 0 && char.IsLowSurrogate(lineText[deleteStart]) && char.IsHighSurrogate(lineText[deleteStart - 1]))
+                {
+                    deleteStart--;
+                    deleteLen = 2;
+                }
+                int charWidth = EditorSurface.GetCharDisplayWidth(lineText, deleteStart);
+                if (line == startLine) deletedVisualWidth = charWidth;
+                commands.Add(new DeleteCommand(_document, _document.GetLineStartOffset(line) + deleteStart, deleteLen));
             }
         }
 
@@ -1001,12 +1032,12 @@ public sealed class InputHandler
             _history.Execute(composite);
         }
 
-        // Move the column cursor one position to the left.
-        int newExpCol = expCol - 1;
+        // Move the column cursor left by the visual width of the deleted character.
+        int newExpCol = Math.Max(0, expCol - Math.Max(1, deletedVisualWidth));
         _selection.StartColumnSelection(startLine, newExpCol);
         _selection.ExtendColumnSelection(endLine, newExpCol);
 
-        string newLineText = _document.GetLine(startLine);
+        string newLineText = StripTrailingCR(_document.GetLine(startLine));
         int caretCharCol = SelectionManager.CompressedColumnAt(newLineText, newExpCol, _tabSize);
         _caret.MoveToLineColumn(startLine, caretCharCol);
         TextModified?.Invoke();
@@ -1031,12 +1062,14 @@ public sealed class InputHandler
         {
             if (line >= _document.LineCount) continue;
 
-            string lineText = _document.GetLine(line);
+            string lineText = StripTrailingCR(_document.GetLine(line));
             int charCol = SelectionManager.CompressedColumnAt(lineText, expCol, _tabSize);
 
             if (charCol < lineText.Length)
             {
-                commands.Add(new DeleteCommand(_document, _document.GetLineStartOffset(line) + charCol, 1));
+                // Delete the full character (2 code units for surrogate pair, 1 otherwise).
+                int deleteLen = (char.IsHighSurrogate(lineText[charCol]) && charCol + 1 < lineText.Length && char.IsLowSurrogate(lineText[charCol + 1])) ? 2 : 1;
+                commands.Add(new DeleteCommand(_document, _document.GetLineStartOffset(line) + charCol, deleteLen));
             }
         }
 
@@ -1050,7 +1083,7 @@ public sealed class InputHandler
         _selection.StartColumnSelection(startLine, expCol);
         _selection.ExtendColumnSelection(endLine, expCol);
 
-        string newLineText = _document.GetLine(startLine);
+        string newLineText = StripTrailingCR(_document.GetLine(startLine));
         int caretCharCol = SelectionManager.CompressedColumnAt(newLineText, expCol, _tabSize);
         _caret.MoveToLineColumn(startLine, caretCharCol);
         TextModified?.Invoke();
@@ -1069,7 +1102,7 @@ public sealed class InputHandler
         long caretCol = _caret.Column;
 
         // Get the expanded column of the caret for consistent paste position.
-        string caretLineText = _document.GetLine(startLine);
+        string caretLineText = StripTrailingCR(_document.GetLine(startLine));
         int expCol = ExpandedColumnAt(caretLineText, (int)Math.Min(caretCol, caretLineText.Length));
 
         var commands = new List<ICommand>();
@@ -1081,7 +1114,7 @@ public sealed class InputHandler
             long docLine = startLine + i;
             if (docLine >= _document.LineCount) continue;
 
-            string lineText = _document.GetLine(docLine);
+            string lineText = StripTrailingCR(_document.GetLine(docLine));
             long lineStart = _document.GetLineStartOffset(docLine);
             int charCol = SelectionManager.CompressedColumnAt(lineText, expCol, _tabSize);
 

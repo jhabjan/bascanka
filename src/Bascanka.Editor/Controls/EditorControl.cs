@@ -90,6 +90,7 @@ public sealed class EditorControl : UserControl
     public static int DefaultCaretBlinkRate { get; set; } = 500;
     public static long FoldingMaxFileSize { get; set; } = 50_000_000;
     public static bool DefaultAutoIndent { get; set; } = true;
+    public static bool DefaultWordWrap { get; set; }
     public static int DefaultCaretScrollBuffer { get; set; } = 4;
     public static int DefaultTextLeftPadding { get; set; } = 6;
     public static int DefaultLineSpacing { get; set; } = 2;
@@ -362,6 +363,12 @@ public sealed class EditorControl : UserControl
         }
     }
 
+    /// <summary>
+    /// Optional factory for the context menu renderer. When set, the editor
+    /// uses it instead of its built-in <c>ThemedContextMenuRenderer</c>.
+    /// </summary>
+    public Func<ITheme, ToolStripRenderer>? ContextMenuRenderer { get; set; }
+
     /// <summary>The current colour theme.</summary>
     public ITheme Theme
     {
@@ -410,6 +417,13 @@ public sealed class EditorControl : UserControl
         set => _fileSizeBytes = value;
     }
 
+    /// <summary>
+    /// True when the document is backed by a memory-mapped file source.
+    /// Save operations must use a temp-file + rename strategy to avoid
+    /// file-locking conflicts.
+    /// </summary>
+    public bool IsMemoryMappedDocument { get; set; }
+
     /// <summary>The caret manager.</summary>
     public CaretManager CaretMgr => _caretManager;
 
@@ -456,10 +470,89 @@ public sealed class EditorControl : UserControl
                     int wrapRow = wrapCols > 0 ? expandedCol / wrapCols : 0;
                     return _surface.DocumentLineToWrapRow(docLine, wrapRow);
                 };
+
+                _caretManager.WrapMoveUp = (line, col, desiredCol) =>
+                {
+                    string text = _document.GetLine(line);
+                    int wrapCols = _surface.WrapColumns;
+                    if (wrapCols <= 0) return null;
+
+                    int expandedCol = ExpandedLength(text, (int)Math.Min(col, text.Length));
+                    int wrapRow = expandedCol / wrapCols;
+
+                    int desiredExp = ExpandedLength(text, (int)Math.Min(desiredCol, text.Length));
+                    int desiredInRow = desiredExp % wrapCols;
+
+                    if (wrapRow > 0)
+                    {
+                        // Move to previous wrap row in same line.
+                        int targetExpCol = (wrapRow - 1) * wrapCols + desiredInRow;
+                        targetExpCol = Math.Min(targetExpCol, wrapRow * wrapCols - 1);
+                        long newCol = CompressedLength(text, targetExpCol);
+                        return (line, newCol);
+                    }
+                    else
+                    {
+                        // Move to previous document line's last wrap row.
+                        long prevLine = line - 1;
+                        if (_caretManager.Folding is not null && prevLine >= 0 && !_caretManager.Folding.IsLineVisible(prevLine))
+                            prevLine = _caretManager.Folding.NextVisibleLine(prevLine, _document.LineCount, forward: false);
+                        if (prevLine < 0) return null;
+
+                        string prevText = _document.GetLine(prevLine);
+                        int prevExpLen = ExpandedLength(prevText);
+                        int prevWrapRows = Math.Max(1, (prevExpLen + wrapCols - 1) / wrapCols);
+                        int lastRow = prevWrapRows - 1;
+                        int targetExpCol = lastRow * wrapCols + desiredInRow;
+                        targetExpCol = Math.Min(targetExpCol, prevExpLen);
+                        long newCol = CompressedLength(prevText, targetExpCol);
+                        return (prevLine, newCol);
+                    }
+                };
+
+                _caretManager.WrapMoveDown = (line, col, desiredCol) =>
+                {
+                    string text = _document.GetLine(line);
+                    int wrapCols = _surface.WrapColumns;
+                    if (wrapCols <= 0) return null;
+
+                    int expandedCol = ExpandedLength(text, (int)Math.Min(col, text.Length));
+                    int wrapRow = expandedCol / wrapCols;
+                    int totalRows = Math.Max(1, (ExpandedLength(text) + wrapCols - 1) / wrapCols);
+
+                    int desiredExp = ExpandedLength(text, (int)Math.Min(desiredCol, text.Length));
+                    int desiredInRow = desiredExp % wrapCols;
+
+                    if (wrapRow < totalRows - 1)
+                    {
+                        // Move to next wrap row in same line.
+                        int targetExpCol = (wrapRow + 1) * wrapCols + desiredInRow;
+                        int nextRowEnd = Math.Min((wrapRow + 2) * wrapCols, ExpandedLength(text));
+                        targetExpCol = Math.Min(targetExpCol, nextRowEnd);
+                        long newCol = CompressedLength(text, targetExpCol);
+                        return (line, newCol);
+                    }
+                    else
+                    {
+                        // Move to next document line's first wrap row.
+                        long nextLine = line + 1;
+                        if (_caretManager.Folding is not null && nextLine < _document.LineCount && !_caretManager.Folding.IsLineVisible(nextLine))
+                            nextLine = _caretManager.Folding.NextVisibleLine(nextLine, _document.LineCount, forward: true);
+                        if (nextLine >= _document.LineCount) return null;
+
+                        string nextText = _document.GetLine(nextLine);
+                        int targetExpCol = desiredInRow;
+                        targetExpCol = Math.Min(targetExpCol, ExpandedLength(nextText));
+                        long newCol = CompressedLength(nextText, targetExpCol);
+                        return (nextLine, newCol);
+                    }
+                };
             }
             else
             {
                 _caretManager.LineColumnToVisibleRow = null;
+                _caretManager.WrapMoveUp = null;
+                _caretManager.WrapMoveDown = null;
             }
 
             UpdateScrollBars();
@@ -765,6 +858,9 @@ public sealed class EditorControl : UserControl
 
     /// <summary>Returns the entire document text.</summary>
     public string GetAllText() => _document.ToString();
+
+    /// <summary>Returns a substring of the document.</summary>
+    public string GetText(long offset, long length) => _document.GetText(offset, length);
 
     /// <summary>Returns the length of the document in characters.</summary>
     public long GetBufferLength() => _document.Length;
@@ -1515,8 +1611,20 @@ public sealed class EditorControl : UserControl
         if (_hexEditor is not null)
             _hexEditor.Theme = theme;
 
-        // Context menu theming.
-        _contextMenu.Renderer = new ThemedContextMenuRenderer(theme);
+        ApplyContextMenuTheme(theme);
+    }
+
+    /// <summary>
+    /// Applies the context menu renderer for the given theme.
+    /// Call after setting <see cref="ContextMenuRenderer"/> if the theme
+    /// was already applied.
+    /// </summary>
+    public void ApplyContextMenuTheme(ITheme? theme = null)
+    {
+        theme ??= _theme;
+        if (theme is null) return;
+        _contextMenu.Renderer = ContextMenuRenderer?.Invoke(theme)
+            ?? new ThemedContextMenuRenderer(theme);
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -1609,6 +1717,22 @@ public sealed class EditorControl : UserControl
                 col++;
         }
         return col;
+    }
+
+    /// <summary>Converts an expanded (visual) column back to a character index.</summary>
+    private int CompressedLength(string text, int expandedCol)
+    {
+        int col = 0;
+        int tabSize = _surface.TabSize;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (col >= expandedCol) return i;
+            if (text[i] == '\t')
+                col += tabSize - (col % tabSize);
+            else
+                col++;
+        }
+        return text.Length;
     }
 
     // ────────────────────────────────────────────────────────────────────

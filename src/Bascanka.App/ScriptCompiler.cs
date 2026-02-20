@@ -13,8 +13,7 @@ namespace Bascanka.App;
 public sealed class ScriptCompiler
 {
     private static readonly string CacheDirectory =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Bascanka", "plugin-cache");
+        Path.Combine(SettingsManager.AppDataFolder, "plugin-cache");
 
     /// <summary>
     /// Compiles a .csx script file and returns the resulting assembly.

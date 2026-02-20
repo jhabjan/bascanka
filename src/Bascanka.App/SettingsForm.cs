@@ -27,6 +27,7 @@ internal sealed class SettingsForm : Form
     // ── Appearance controls ──────────────────────────────────────────
     private ComboBox _themeCombo = null!;
     private ComboBox _uiLanguageCombo = null!;
+    private CheckBox _recentFilesSeparatedCheck = null!;
     private Panel _colorGridPanel = null!;
     private readonly Dictionary<string, Color> _pendingOverrides = new(StringComparer.OrdinalIgnoreCase);
 
@@ -44,6 +45,8 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _bookmarkSizeNum = null!;
     private NumericUpDown _tabHeightNum = null!;
     private NumericUpDown _minTabWidthNum = null!;
+    private NumericUpDown _menuItemPaddingNum = null!;
+    private NumericUpDown _terminalPaddingNum = null!;
 
     // ── Performance controls ────────────────────────────────────────
     private NumericUpDown _largeFileNum = null!;
@@ -51,9 +54,11 @@ internal sealed class SettingsForm : Form
     private NumericUpDown _maxRecentFilesNum = null!;
     private NumericUpDown _searchHistoryNum = null!;
     private NumericUpDown _searchDebounceNum = null!;
+    private NumericUpDown _autoSaveIntervalNum = null!;
 
     // ── System controls ─────────────────────────────────────────────
     private CheckBox _contextMenuCheckBox = null!;
+    private CheckBox _newExplorerContextMenuCheckBox = null!;
 
     // ── Color grid entries ───────────────────────────────────────────
     private static readonly (string Group, string Property, string DisplayName)[] ColorEntries =
@@ -105,9 +110,25 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         MinimumSize = new Size(640, 480);
-        ClientSize = new Size(740, 560);
+
+        // Restore saved size or use a larger default.
+        int savedW = SettingsManager.GetInt(SettingsManager.KeySettingsWidth, 860);
+        int savedH = SettingsManager.GetInt(SettingsManager.KeySettingsHeight, 640);
+        ClientSize = new Size(Math.Max(savedW, MinimumSize.Width),
+                              Math.Max(savedH, MinimumSize.Height));
+
         BackColor = _theme.EditorBackground;
         ForeColor = _theme.EditorForeground;
+
+        // Persist size on close.
+        FormClosing += (_, _) =>
+        {
+            if (WindowState == FormWindowState.Normal)
+            {
+                SettingsManager.SetInt(SettingsManager.KeySettingsWidth, ClientSize.Width);
+                SettingsManager.SetInt(SettingsManager.KeySettingsHeight, ClientSize.Height);
+            }
+        };
 
         // ── Category list (left) ────────────────────────────────────
         _categoryList = new ListBox
@@ -199,16 +220,16 @@ internal sealed class SettingsForm : Form
         // Suppress warnings for fields assigned in Build* methods.
         _ = _fontFamilyCombo; _ = _fontSizeNum; _ = _tabWidthNum;
         _ = _scrollSpeedNum; _ = _autoIndentCheck; _ = _caretScrollBufferNum;
-        _ = _themeCombo; _ = _uiLanguageCombo; _ = _colorGridPanel;
+        _ = _themeCombo; _ = _uiLanguageCombo; _ = _recentFilesSeparatedCheck; _ = _colorGridPanel;
         _ = _caretBlinkNum; _ = _maxTabWidthNum;
         _ = _textLeftPaddingNum; _ = _lineSpacingNum; _ = _minZoomFontNum;
         _ = _whitespaceOpacityNum; _ = _foldIndicatorOpacityNum;
         _ = _gutterPaddingLeftNum; _ = _gutterPaddingRightNum;
         _ = _foldButtonSizeNum; _ = _bookmarkSizeNum;
-        _ = _tabHeightNum; _ = _minTabWidthNum;
+        _ = _tabHeightNum; _ = _minTabWidthNum; _ = _menuItemPaddingNum; _ = _terminalPaddingNum;
         _ = _largeFileNum; _ = _foldingMaxNum; _ = _maxRecentFilesNum;
         _ = _searchHistoryNum; _ = _searchDebounceNum;
-        _ = _contextMenuCheckBox;
+        _ = _contextMenuCheckBox; _ = _newExplorerContextMenuCheckBox;
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -304,6 +325,10 @@ internal sealed class SettingsForm : Form
         _uiLanguageCombo.SelectedIndex = langIdx;
         _uiLanguageCombo.Tag = languages; // store for lookup by index
         y = AddLabeledControl(headerPanel, Strings.SettingsUILanguage, _uiLanguageCombo, null, y, Strings.SettingsUILanguageDesc);
+
+        // Recent files display style
+        _recentFilesSeparatedCheck = CreateCheckBox(SettingsManager.GetBool(SettingsManager.KeyRecentFilesSeparated, true));
+        y = AddLabeledControl(headerPanel, Strings.SettingsRecentFilesSeparated, _recentFilesSeparatedCheck, null, y, Strings.SettingsRecentFilesSeparatedDesc);
 
         // Separator
         var sep = new Panel
@@ -422,6 +447,14 @@ internal sealed class SettingsForm : Form
         _minTabWidthNum = CreateNumeric(40, 200, 10, SettingsManager.GetInt(SettingsManager.KeyMinTabWidth, TabStrip.ConfigMinTabWidth));
         y = AddLabeledControl(panel, Strings.SettingsMinTabWidth, _minTabWidthNum, Strings.SettingsMinTabWidthUnit, y, Strings.SettingsMinTabWidthDesc);
 
+        // Menu Item Padding
+        _menuItemPaddingNum = CreateNumeric(0, 12, 1, SettingsManager.GetInt(SettingsManager.KeyMenuItemPadding, ThemedMenuRenderer.DefaultMenuItemPadding));
+        y = AddLabeledControl(panel, Strings.SettingsMenuItemPadding, _menuItemPaddingNum, Strings.SettingsMenuItemPaddingUnit, y, Strings.SettingsMenuItemPaddingDesc);
+
+        // Terminal Padding
+        _terminalPaddingNum = CreateNumeric(0, 24, 1, SettingsManager.GetInt(SettingsManager.KeyTerminalPadding, TerminalPanel.DefaultTerminalPadding));
+        y = AddLabeledControl(panel, Strings.SettingsTerminalPadding, _terminalPaddingNum, Strings.SettingsTerminalPaddingUnit, y, Strings.SettingsTerminalPaddingDesc);
+
         return panel;
     }
 
@@ -449,6 +482,10 @@ internal sealed class SettingsForm : Form
         // Search Debounce
         _searchDebounceNum = CreateNumeric(50, 2000, 50, SettingsManager.GetInt(SettingsManager.KeySearchDebounce, EditorControl.DefaultSearchDebounce));
         y = AddLabeledControl(panel, Strings.SettingsSearchDebounce, _searchDebounceNum, Strings.SettingsSearchDebounceUnit, y, Strings.SettingsSearchDebounceDesc);
+
+        // Auto-Save Interval
+        _autoSaveIntervalNum = CreateNumeric(1, 300, 5, SettingsManager.GetInt(SettingsManager.KeyAutoSaveInterval, RecoveryManager.DefaultIntervalSeconds));
+        y = AddLabeledControl(panel, Strings.SettingsAutoSaveInterval, _autoSaveIntervalNum, Strings.SettingsAutoSaveIntervalUnit, y, Strings.SettingsAutoSaveIntervalDesc);
 
         return panel;
     }
@@ -483,6 +520,41 @@ internal sealed class SettingsForm : Form
         };
         panel.Controls.Add(desc);
         y += desc.PreferredHeight + 12;
+
+        // ── New Explorer context menu ────────────────────────────
+        var sep1 = new Panel
+        {
+            Location = new Point(0, y + 4),
+            Size = new Size(480, 1),
+            BackColor = _theme.TabBorder,
+        };
+        panel.Controls.Add(sep1);
+        y += 20;
+
+        _newExplorerContextMenuCheckBox = new CheckBox
+        {
+            Text = Strings.SettingsNewExplorerContextMenu,
+            Checked = SettingsManager.IsNewExplorerContextMenuRegistered(),
+            Font = LabelFont(),
+            ForeColor = _theme.EditorForeground,
+            AutoSize = true,
+            MaximumSize = new Size(460, 0),
+            Location = new Point(0, y + 2),
+        };
+        panel.Controls.Add(_newExplorerContextMenuCheckBox);
+        y += _newExplorerContextMenuCheckBox.PreferredSize.Height + 6;
+
+        var newExplorerDesc = new Label
+        {
+            Text = Strings.SettingsNewExplorerContextMenuDesc,
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = MutedColor(),
+            AutoSize = true,
+            MaximumSize = new Size(460, 0),
+            Location = new Point(18, y),
+        };
+        panel.Controls.Add(newExplorerDesc);
+        y += newExplorerDesc.PreferredHeight + 12;
 
         // Separator
         var sep = new Panel
@@ -824,6 +896,8 @@ internal sealed class SettingsForm : Form
         if (_themeCombo.SelectedItem is string themeName)
             SettingsManager.SetString(SettingsManager.KeyTheme, themeName);
 
+        SettingsManager.SetBool(SettingsManager.KeyRecentFilesSeparated, _recentFilesSeparatedCheck.Checked);
+
         // UI Language
         var langs = _uiLanguageCombo.Tag as List<(string Code, string DisplayName)>;
         if (langs is not null && _uiLanguageCombo.SelectedIndex >= 0 && _uiLanguageCombo.SelectedIndex < langs.Count)
@@ -851,6 +925,8 @@ internal sealed class SettingsForm : Form
         SettingsManager.SetInt(SettingsManager.KeyTabHeight, (int)_tabHeightNum.Value);
         SettingsManager.SetInt(SettingsManager.KeyMaxTabWidth, (int)_maxTabWidthNum.Value);
         SettingsManager.SetInt(SettingsManager.KeyMinTabWidth, (int)_minTabWidthNum.Value);
+        SettingsManager.SetInt(SettingsManager.KeyMenuItemPadding, (int)_menuItemPaddingNum.Value);
+        SettingsManager.SetInt(SettingsManager.KeyTerminalPadding, (int)_terminalPaddingNum.Value);
 
         // ── Performance ─────────────────────────────────────────────
         SettingsManager.SetInt(SettingsManager.KeyLargeFileThresholdMB, (int)_largeFileNum.Value);
@@ -858,6 +934,7 @@ internal sealed class SettingsForm : Form
         SettingsManager.SetInt(SettingsManager.KeyMaxRecentFiles, (int)_maxRecentFilesNum.Value);
         SettingsManager.SetInt(SettingsManager.KeySearchHistoryLimit, (int)_searchHistoryNum.Value);
         SettingsManager.SetInt(SettingsManager.KeySearchDebounce, (int)_searchDebounceNum.Value);
+        SettingsManager.SetInt(SettingsManager.KeyAutoSaveInterval, (int)_autoSaveIntervalNum.Value);
 
         // ── System ──────────────────────────────────────────────────
         bool wantRegistered = _contextMenuCheckBox.Checked;
@@ -866,6 +943,35 @@ internal sealed class SettingsForm : Form
             SettingsManager.RegisterExplorerContextMenu();
         else if (!wantRegistered && isRegistered)
             SettingsManager.UnregisterExplorerContextMenu();
+
+        // Windows primary context menu
+        bool wantNewExplorer = _newExplorerContextMenuCheckBox.Checked;
+        bool isNewExplorer = SettingsManager.IsNewExplorerContextMenuRegistered();
+        if (wantNewExplorer != isNewExplorer)
+        {
+            Cursor = Cursors.WaitCursor;
+            string? error = wantNewExplorer
+                ? SettingsManager.RegisterNewExplorerContextMenu()
+                : SettingsManager.UnregisterNewExplorerContextMenu();
+            Cursor = Cursors.Default;
+
+            if (error is not null)
+            {
+                MessageBox.Show(
+                    string.Format(Strings.SettingsNewExplorerContextMenuError, error),
+                    Strings.SettingsTitle,
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else
+            {
+                var restart = MessageBox.Show(
+                    Strings.SettingsNewExplorerRestartExplorer,
+                    Strings.SettingsTitle,
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (restart == DialogResult.Yes)
+                    SettingsManager.RestartExplorer();
+            }
+        }
     }
 
     private void OnResetClick(object? sender, EventArgs e)
@@ -894,6 +1000,7 @@ internal sealed class SettingsForm : Form
         int tIdx = _themeCombo.Items.IndexOf("Dark");
         if (tIdx >= 0) _themeCombo.SelectedIndex = tIdx;
         _uiLanguageCombo.SelectedIndex = 0; // English
+        _recentFilesSeparatedCheck.Checked = true;
         _pendingOverrides.Clear();
         PopulateColorGrid();
 
@@ -911,6 +1018,8 @@ internal sealed class SettingsForm : Form
         _tabHeightNum.Value = 30;
         _maxTabWidthNum.Value = 220;
         _minTabWidthNum.Value = 80;
+        _menuItemPaddingNum.Value = ThemedMenuRenderer.DefaultMenuItemPadding;
+        _terminalPaddingNum.Value = TerminalPanel.DefaultTerminalPadding;
 
         // Performance
         _largeFileNum.Value = 10;
@@ -918,8 +1027,10 @@ internal sealed class SettingsForm : Form
         _maxRecentFilesNum.Value = 20;
         _searchHistoryNum.Value = 25;
         _searchDebounceNum.Value = 300;
+        _autoSaveIntervalNum.Value = RecoveryManager.DefaultIntervalSeconds;
 
         _contextMenuCheckBox.Checked = SettingsManager.IsExplorerContextMenuRegistered();
+        _newExplorerContextMenuCheckBox.Checked = SettingsManager.IsNewExplorerContextMenuRegistered();
     }
 
     private void OnExportClick(object? sender, EventArgs e)

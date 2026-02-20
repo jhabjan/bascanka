@@ -11,24 +11,35 @@
     <AssemblyName>Bascanka</AssemblyName>
     <RootNamespace>Bascanka.App</RootNamespace>
     <Copyright>© 2026 Josip Habjan. All rights reserved.</Copyright>
-    <Version>1.0.1</Version>
+    <Version>1.0.4</Version>
   </PropertyGroup>
   <ItemGroup>
+    <None Remove="Resources\AppxManifest.xml.template" />
+    <None Remove="Resources\Bascanka.Explorer.ContextMenu.dll" />
     <None Remove="Resources\bascanka.ico" />
     <None Remove="Resources\bascanka_logo.png" />
     <None Remove="Resources\bascanska_ploca.jpg" />
+    <None Remove="Resources\contributors.txt" />
     <None Remove="Resources\lang_en.json" />
     <None Remove="Resources\lang_hr.json" />
     <None Remove="Resources\lang_sr.json" />
+    <None Remove="Resources\lang_zh.json" />
+    <None Remove="Resources\release_notes.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\contributors.txt" Link="Resources\contributors.txt" />
+    <EmbeddedResource Include="..\..\release_notes.txt" Link="Resources\release_notes.txt" />
+    <EmbeddedResource Include="Resources\AppxManifest.xml.template" />
+    <EmbeddedResource Include="Resources\Bascanka.Explorer.ContextMenu.dll" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\bascanka.ico" />
     <EmbeddedResource Include="Resources\bascanka_logo.png" />
     <EmbeddedResource Include="Resources\bascanska_ploca.jpg" />
-    <EmbeddedResource Include="Resources\lang_zh.json" />
     <EmbeddedResource Include="Resources\lang_en.json" />
     <EmbeddedResource Include="Resources\lang_hr.json" />
     <EmbeddedResource Include="Resources\lang_sr.json" />
+    <EmbeddedResource Include="Resources\lang_zh.json" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Bascanka.Core\Bascanka.Core.csproj" />

@@ -1,34 +1,57 @@
 using System.IO.Pipes;
 using System.Text;
+using System.Threading;
 
 namespace Bascanka.App;
 
 /// <summary>
-/// Manages single-instance behavior using named pipes.
-/// When files are passed as arguments and an existing instance is running,
-/// the files are sent to the existing instance via a named pipe.
+/// Manages single-instance behavior using a global mutex and named pipes.
+/// Only one Bascanka process may run at a time. Subsequent launches forward
+/// their file arguments to the existing instance and exit.
 /// </summary>
 public sealed class SingleInstanceManager : IDisposable
 {
+    private const string MutexName = "Global\\Bascanka_SingleInstance";
     private const string PipeName = "Bascanka_Pipe";
     private const int ConnectTimeoutMs = 1000;
 
+    private Mutex? _mutex;
     private CancellationTokenSource? _cts;
     private Task? _listenTask;
 
     /// <summary>
-    /// Attempts to send file paths to an already-running Bascanka instance.
-    /// Returns <c>true</c> if the files were sent successfully (caller should exit).
-    /// Returns <c>false</c> if no instance is listening (caller should start normally).
+    /// Attempts to acquire the single-instance mutex.
+    /// Returns <c>true</c> if this is the first instance (ownership acquired).
+    /// Returns <c>false</c> if another instance already owns the mutex.
     /// </summary>
-    public static bool TrySendFiles(string[] files)
+    public bool TryAcquire()
+    {
+        _mutex = new Mutex(true, MutexName, out bool createdNew);
+        if (!createdNew)
+        {
+            // Another instance owns the mutex — release our handle.
+            _mutex.Dispose();
+            _mutex = null;
+        }
+        return createdNew;
+    }
+
+    /// <summary>
+    /// Signals an already-running Bascanka instance.
+    /// If <paramref name="files"/> contains paths they are sent for opening;
+    /// otherwise a simple activate signal is sent.
+    /// Returns <c>true</c> if the signal was delivered (caller should exit).
+    /// Returns <c>false</c> if no instance is listening.
+    /// </summary>
+    public static bool TrySignalExisting(string[] files)
     {
         try
         {
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             client.Connect(ConnectTimeoutMs);
 
-            string payload = string.Join("\n", files);
+            // An empty payload means "just activate the window".
+            string payload = files.Length > 0 ? string.Join("\n", files) : "";
             byte[] data = Encoding.UTF8.GetBytes(payload);
             client.Write(data, 0, data.Length);
             client.Flush();
@@ -36,7 +59,7 @@ public sealed class SingleInstanceManager : IDisposable
         }
         catch
         {
-            // No server listening or connection failed — no existing instance.
+            // No server listening or connection failed.
             return false;
         }
     }
@@ -73,8 +96,8 @@ public sealed class SingleInstanceManager : IDisposable
                     string[] files = content
                         .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-                    if (files.Length > 0)
-                        onFilesReceived(files);
+                    // Always invoke: empty array means "just activate the window".
+                    onFilesReceived(files);
                 }
                 catch (OperationCanceledException)
                 {
@@ -113,5 +136,13 @@ public sealed class SingleInstanceManager : IDisposable
         catch { /* ignore */ }
 
         _cts?.Dispose();
+
+        // Release the single-instance mutex.
+        if (_mutex != null)
+        {
+            try { _mutex.ReleaseMutex(); } catch { }
+            _mutex.Dispose();
+            _mutex = null;
+        }
     }
 }

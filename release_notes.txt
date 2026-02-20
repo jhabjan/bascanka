@@ -1,0 +1,55 @@
+﻿v.1.0.4.		????-??-??
+--------------------------
+- fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
+- fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.
+- fixed word wrap cursor mavigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
+- fixed a bug where custom highlighting profiles assigned via Language > Custom Highlighting were not restored when reopening the application.
+- word wrap is now saved per tab, so each document remembers its own setting across restarts and crashes, with new documents defaulting to the last-used state.
+- open recent files menu now displays recent files in a cleaner two-column format.
+- added move up and move down buttons for reordering custom highlighting profiles.
+- fixed CJK (Chinese, Japanese, Korean) characters overlapping in the embedded terminal by correctly treating fullwidth characters as double-width cells.
+
+v.1.0.3.		2025-02-18
+--------------------------
+- implemented embedded terminal (cmd.exe) to the bottom panel using the Windows ConPTY API.
+- added close/crash unsaved changes recovery with periodic automatic back-ups to "%AppData%\Bascanka\recovery" - small/untitled files are backed up in full size as UTF-8, while large memory-mapped files use efficient binary delta/changes-only save format.
+- fixed emoji and special character rendering, cursor positioning, selection, and caret navigation - including surrogate pairs, ZWJ sequences and variation selectors.
+- lines containing wide or special characters are now rendered character-by-character to prevent GDI font fallback from causing cursor drift.
+- improved Unicode character support.
+- implemented a pending-delta mechanism for the line offset cache — consecutive same-line edits accumulate a virtual shift in O(1) instead of triggering an O(N) full-document rescan.
+- added double-click on empty tab bar area to create a new untitled document.
+- added tabbed bottom panel - Find Results and Terminal now share a tabbed bottom panel.
+- fixed search history not being saved correctly.
+- added Modern Windows Context Menu registration from Settings ("Edit with Bascanka"), with automatic sparse package and COM shell extension setup.
+- only one Bascanka instance now runs at a time - opening files while it's running forwards them to the existing window via named pipes.
+
+v.1.0.2.		2026-02-15
+--------------------------
+- added CJK / Unicode Character Support - Fixed cursor positioning for CJK (Chinese, Japanese, Korean) and other fullwidth characters. The caret, selection highlights, search highlights, and all   other visual elements now align correctly with double-width characters.
+- added GB2312 encoding and support for detecting GB2312 when opening files.
+- added the ability to compare opened tabs text via the tab right-click context menu.
+- added a per-tab progress bar when saving large files, allowing users to continue working on other tabs while a file is being saved.
+- added system theme detection feature.
+- added Chinese UI localization.
+- added Serbian (Cyrillic) UI localization.
+- fixed arrow key navigation to skip over surrogate pairs as a single unit instead of requiring two key presses per supplementary character.
+- fixed box/column selection losing column mode when starting with Delete or Backspace, so it now stays in column mode for continued editing.
+- fixed performance issue when editing large files and jumping + making changes between beginning and end of the file.
+- extended the About window to include contributors and release notes.
+
+v.1.0.1.		2026-02-14
+--------------------------
+- added Side-by-side file comparison. Available from Tools > Compare Files.
+- added Sed Transform / Unix sed-style substitution with live preview. Available from Tools > Sed Transform.
+- added Custom Highlighting + Folding / User-defined regex-based highlighting + folding profiles.
+- added COBOL Lexer / language support.
+- added persistence for window position, size, maximized state and opened tabs.
+- extended to be fully customizable via Tools > Settings (theme colors, fonts, text rendering engine limits, etc).
+- introduced a --reset (-r) command-line parameter for bascanka.exe, allowing users to clear the session state and start with a fresh instance.
+- other small bug fixes.
+
+v.1.0.0.		2026-02-12
+--------------------------
+- initial release.
+- supports syntax highlighting for 18 languages/scripts.
+- supports large file editing (10 GB+).

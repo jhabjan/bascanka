@@ -71,6 +71,8 @@
     "MenuFullScreen": "&Full Screen",
     "MenuSymbolList": "&Symbol List",
     "MenuFindResults": "Find &Results",
+    "MenuTerminal": "&Terminal",
+    "MenuFolding": "&Folding",
     "MenuToggleFold": "Toggle &Fold",
     "MenuFoldAll": "Fold A&ll",
     "MenuUnfoldAll": "&Unfold All",
@@ -90,6 +92,7 @@
     "DiffNoDifferences": "Files are identical.",
     "CompareSelectFirstFile": "Select first file to compare",
     "CompareSelectSecondFile": "Select second file to compare",
+    "MenuOpenAppData": "Open &App Data Folder",
     "MenuSettings": "S&ettings...",
 
     "MenuPlugins": "Pl&ugins",
@@ -116,6 +119,7 @@
     "ErrorFileNotFound": "File not found: {0}",
     "ErrorOpeningFile": "Error opening file \"{0}\": {1}",
     "ErrorSavingFile": "Error saving file \"{0}\": {1}",
+    "FileStillLoading": "The file is still loading. Please wait until loading completes before saving.",
     "ErrorNoDocumentOpen": "No document is currently open.",
     "ErrorUnhandledException": "An unexpected error has occurred: {0}\n\nDetails:\n{1}",
     "ErrorCompilingScript": "Failed to compile script plugin.",
@@ -125,11 +129,20 @@
 
     "CommandPaletteNotYetImplemented": "Command Palette will be available in a future version.",
 
+    "SavingProgressFormat": "Saving\u2026 {0} / {1}",
+    "ReloadingAfterSave": "Reloading file\u2026",
+    "ReloadingProgressFormat": "Reloading\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "Zoom: {0}%",
 
     "SettingsTitle": "Settings",
-    "SettingsExplorerContextMenu": "Register \"Edit with Bascanka\" in Windows Explorer context menu",
+    "ContextMenuEditWith": "Edit with Bascanka",
+    "SettingsExplorerContextMenu": "Register \"Edit with Bascanka\" in Old Style Windows Explorer context menu",
     "SettingsExplorerContextMenuDesc": "Adds a right-click option to open files with Bascanka in Windows Explorer.",
+    "SettingsNewExplorerContextMenu": "Register \"Edit with Bascanka\" in Modern Style Windows Explorer context menu (requires Explorer restart)",
+    "SettingsNewExplorerContextMenuDesc": "Shows \"Edit with Bascanka\" in the new Explorer context menu without clicking \"Show more options\".",
+    "SettingsNewExplorerContextMenuError": "Failed to register new Explorer context menu: {0}",
+    "SettingsNewExplorerRestartExplorer": "Windows Explorer needs to restart for the change to take effect. Restart now?",
 
     "SettingsCategoryEditor": "Editor",
     "SettingsCategoryDisplay": "Display",
@@ -179,8 +192,14 @@
     "SettingsTabHeightUnit": "px",
     "SettingsMinTabWidth": "Min Tab Width",
     "SettingsMinTabWidthUnit": "px",
+    "SettingsMenuItemPadding": "Menu Item Padding",
+    "SettingsMenuItemPaddingUnit": "px",
+    "SettingsTerminalPadding": "Terminal Padding",
+    "SettingsTerminalPaddingUnit": "px",
     "SettingsSearchDebounce": "Search Debounce",
     "SettingsSearchDebounceUnit": "ms",
+    "SettingsAutoSaveInterval": "Auto-Save Interval",
+    "SettingsAutoSaveIntervalUnit": "s",
 
     "SettingsCategoryAppearance": "Appearance",
 
@@ -194,6 +213,8 @@
     "SettingsThemeDesc": "Overall colour scheme for the editor UI.",
     "SettingsUILanguage": "UI Language",
     "SettingsUILanguageDesc": "Language used for menus, dialogs, and labels.",
+    "SettingsRecentFilesSeparated": "Separated Recent Files",
+    "SettingsRecentFilesSeparatedDesc": "Show recent files with directory and filename in separate columns.",
 
     "SettingsCaretBlinkRateDesc": "Interval in milliseconds between caret visibility toggles.",
     "SettingsTextLeftPaddingDesc": "Horizontal padding between the gutter and the first character.",
@@ -208,12 +229,15 @@
     "SettingsTabHeightDesc": "Height of the tab bar strip in pixels.",
     "SettingsMaxTabWidthDesc": "Maximum pixel width of a single tab.",
     "SettingsMinTabWidthDesc": "Minimum pixel width of a single tab.",
+    "SettingsMenuItemPaddingDesc": "Vertical padding of menu items in pixels.",
+    "SettingsTerminalPaddingDesc": "Inner padding of the terminal panel in pixels.",
 
     "SettingsLargeFileThresholdDesc": "Files above this size use memory-mapped I/O for performance.",
     "SettingsFoldingMaxFileSizeDesc": "Code folding is disabled for files larger than this.",
     "SettingsMaxRecentFilesDesc": "Maximum number of entries in the Open Recent list.",
     "SettingsSearchHistoryLimitDesc": "Maximum saved search terms in the Find panel.",
     "SettingsSearchDebounceDesc": "Delay before live search starts after typing.",
+    "SettingsAutoSaveIntervalDesc": "How often unsaved changes are backed up for crash recovery.",
 
     "SettingsColorCustomization": "Color Customization",
     "SettingsColorReset": "Reset",
@@ -325,6 +349,14 @@
     "CustomHighlightNewProfile": "New Profile",
     "CustomHighlightEndPattern": "End Pattern",
     "CustomHighlightFoldable": "Foldable",
-    "CustomHighlightScopeBlock": "block"
+    "CustomHighlightScopeBlock": "block",
+    "CustomHighlightExport": "Export...",
+    "CustomHighlightImport": "Import...",
+    "CustomHighlightExportSuccess": "Profiles exported successfully.",
+    "CustomHighlightExportEmpty": "There are no profiles to export.",
+    "CustomHighlightImportSuccess": "{0} profile(s) imported successfully.",
+    "CustomHighlightImportError": "The selected file does not contain valid highlighting profiles.",
+    "CustomHighlightPickColor": "Pick Color...",
+    "CustomHighlightClearColor": "Clear Color"
   }
 }

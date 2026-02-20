@@ -9,8 +9,7 @@ namespace Bascanka.App;
 /// </summary>
 public sealed class KeyboardShortcutManager
 {
-    private static readonly string SettingsDirectory =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bascanka");
+    private static readonly string SettingsDirectory = SettingsManager.AppDataFolder;
 
     private static readonly string ShortcutFilePath =
         Path.Combine(SettingsDirectory, "shortcuts.json");

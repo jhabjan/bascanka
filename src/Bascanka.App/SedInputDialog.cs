@@ -36,7 +36,7 @@ internal sealed class SedInputDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(560, 440);
+        Size = new Size(560, 500);
         ShowInTaskbar = false;
 
         int leftMargin = 20;
@@ -49,15 +49,17 @@ internal sealed class SedInputDialog : Form
         {
             Text = Strings.SedExpressionLabel,
             AutoSize = true,
-            Top = y + 3,
+            Top = y,
             Left = leftMargin,
         };
+
+        y += 22;
 
         _expressionBox = new RichTextBox
         {
             Top = y,
-            Left = leftMargin + 80,
-            Width = rightEdge - leftMargin - 80,
+            Left = leftMargin,
+            Width = rightEdge - leftMargin,
             Height = 28,
             Font = new Font("Consolas", 11f),
             Multiline = true,
@@ -77,7 +79,7 @@ internal sealed class SedInputDialog : Form
             }
         };
 
-        y += 40;
+        y += 38;
 
         // ── Syntax help ─────────────────────────────────────────────
 

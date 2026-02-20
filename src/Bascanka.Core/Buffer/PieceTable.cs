@@ -59,6 +59,15 @@ public sealed class PieceTable : IDisposable
     // edit.  Invalidated on Insert / Delete.  Makes GetLineStartOffset
     // O(1) and OffsetToLineColumn O(log LineCount) via binary search.
     private long[]? _lineOffsetCache;
+    private int _lineOffsetCacheValidCount; // valid entries (may be < _lineOffsetCache.Length)
+
+    // Pending delta: instead of modifying shared cache entries in-place
+    // (which would corrupt MemoryMappedFileSource._lineOffsets), we track
+    // a virtual shift.  All entries at index > _pendingDeltaLine are
+    // logically offset by _pendingDeltaAmount.  This is O(1) per edit
+    // for consecutive typing on the same line.
+    private long _pendingDeltaLine = -1; // -1 = no pending delta
+    private long _pendingDeltaAmount;
 
     /// <summary>
     /// Raised after every <see cref="Insert"/> or <see cref="Delete"/>
@@ -91,7 +100,10 @@ public sealed class PieceTable : IDisposable
                 // Adopt the pre-built line-offset cache so that the first
                 // GetLineStartOffset call doesn't trigger a full O(N) scan.
                 if (precomputed.LineOffsets is { } offsets)
+                {
                     _lineOffsetCache = offsets;
+                    _lineOffsetCacheValidCount = offsets.Length;
+                }
             }
             else
             {
@@ -288,7 +300,7 @@ public sealed class PieceTable : IDisposable
         if (lineIndex == 0) return 0;
 
         EnsureLineOffsetCache();
-        return _lineOffsetCache![lineIndex];
+        return GetCacheOffset(lineIndex);
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -404,21 +416,20 @@ public sealed class PieceTable : IDisposable
         if (offset == 0) return (0, 0);
 
         EnsureLineOffsetCache();
-        long[] cache = _lineOffsetCache!;
 
         // Binary search: find the largest line whose start offset <= offset.
-        long lo = 0, hi = cache.Length - 1;
+        long lo = 0, hi = _lineOffsetCacheValidCount - 1;
         while (lo < hi)
         {
             long mid = lo + (hi - lo + 1) / 2;
-            if (cache[mid] <= offset)
+            if (GetCacheOffset(mid) <= offset)
                 lo = mid;
             else
                 hi = mid - 1;
         }
 
         long line = lo;
-        long column = offset - cache[line];
+        long column = offset - GetCacheOffset(line);
 
         return (line, column);
     }
@@ -536,6 +547,14 @@ public sealed class PieceTable : IDisposable
 
         if (piece.BufferType == BufferType.Original)
         {
+            // Fast path: use pre-computed line offsets with binary search O(log N)
+            // instead of scanning the entire range O(N).
+            if (_original is IPrecomputedLineFeeds precomputed
+                && precomputed.LineOffsets is { } lineOffsets)
+            {
+                return CountLineFeedsFromOffsets(lineOffsets, piece.Start, piece.Length);
+            }
+
             return _original.CountLineFeeds(piece.Start, piece.Length);
         }
         else
@@ -550,6 +569,58 @@ public sealed class PieceTable : IDisposable
             }
             return count;
         }
+    }
+
+    /// <summary>
+    /// Counts newlines in the original-buffer range [start, start+length) by
+    /// binary-searching the pre-computed line-offset table.  Each entry in
+    /// <paramref name="lineOffsets"/> is the character offset of a line start;
+    /// a newline at position <c>p</c> corresponds to a line start at <c>p+1</c>.
+    /// So counting entries where <c>start &lt; entry &lt;= start + length</c>
+    /// gives the number of newlines in the range.
+    /// </summary>
+    private static int CountLineFeedsFromOffsets(long[] lineOffsets, long start, long length)
+    {
+        // We need entries in (start, start + length].
+        long lo = start + 1;
+        long hi = start + length;
+
+        // Find first index where lineOffsets[index] >= lo.
+        int left = LowerBound(lineOffsets, lo);
+        // Find first index where lineOffsets[index] > hi.
+        int right = UpperBound(lineOffsets, hi);
+
+        return right - left;
+    }
+
+    /// <summary>Returns the index of the first element >= value.</summary>
+    private static int LowerBound(long[] arr, long value)
+    {
+        int lo = 0, hi = arr.Length;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo) / 2;
+            if (arr[mid] < value)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        return lo;
+    }
+
+    /// <summary>Returns the index of the first element > value.</summary>
+    private static int UpperBound(long[] arr, long value)
+    {
+        int lo = 0, hi = arr.Length;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo) / 2;
+            if (arr[mid] <= value)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        return lo;
     }
 
     /// <summary>
@@ -603,6 +674,36 @@ public sealed class PieceTable : IDisposable
     // ────────────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Returns the effective line-start offset for <paramref name="lineIndex"/>
+    /// by applying any pending delta to the raw cache entry.
+    /// </summary>
+    private long GetCacheOffset(long lineIndex)
+    {
+        long raw = _lineOffsetCache![lineIndex];
+        if (_pendingDeltaLine >= 0 && lineIndex > _pendingDeltaLine)
+            raw += _pendingDeltaAmount;
+        return raw;
+    }
+
+    /// <summary>
+    /// Writes the pending delta into a new owned array so the shared source
+    /// array is never modified.  Only called when a new edit lands before
+    /// the current delta boundary (rare — only on cursor movement + edit).
+    /// </summary>
+    private void MaterializePendingDelta()
+    {
+        if (_pendingDeltaLine < 0 || _lineOffsetCache is null) return;
+
+        var newCache = new long[_lineOffsetCacheValidCount];
+        for (long i = 0; i < _lineOffsetCacheValidCount; i++)
+            newCache[i] = GetCacheOffset(i);
+
+        _lineOffsetCache = newCache;
+        _pendingDeltaLine = -1;
+        _pendingDeltaAmount = 0;
+    }
+
+    /// <summary>
     /// Incrementally updates the line-offset cache after an edit operation
     /// instead of invalidating and rebuilding from scratch.
     /// For a typical single-character insert with no newlines, this shifts
@@ -632,23 +733,24 @@ public sealed class PieceTable : IDisposable
             // We need to count \n in the old range. The deleted text is gone from
             // the tree already, but we can compute it from the cache: count how many
             // line starts fall within [offset+1, offset+oldLength].
-            long[] cache = _lineOffsetCache;
             long delEnd = offset + oldLength;
             // Binary search for first line start > offset.
-            long lo = 0, hi = cache.Length - 1;
+            // Use hi = _lineOffsetCacheValidCount (exclusive) so the search
+            // correctly returns past-the-end when ALL entries are <= offset.
+            long lo = 0, hi = _lineOffsetCacheValidCount;
             while (lo < hi)
             {
                 long mid = lo + (hi - lo) / 2;
-                if (cache[mid] <= offset)
+                if (GetCacheOffset(mid) <= offset)
                     lo = mid + 1;
                 else
                     hi = mid;
             }
             long firstLineAfter = lo;
             // Count entries in [firstLineAfter..] that are <= delEnd.
-            for (long i = firstLineAfter; i < cache.Length; i++)
+            for (long i = firstLineAfter; i < _lineOffsetCacheValidCount; i++)
             {
-                if (cache[i] <= delEnd)
+                if (GetCacheOffset(i) <= delEnd)
                     removedLines++;
                 else
                     break;
@@ -660,12 +762,11 @@ public sealed class PieceTable : IDisposable
         // Find the line index containing `offset` via binary search.
         long startLine;
         {
-            long[] cache = _lineOffsetCache;
-            long lo2 = 0, hi2 = cache.Length - 1;
+            long lo2 = 0, hi2 = _lineOffsetCacheValidCount - 1;
             while (lo2 < hi2)
             {
                 long mid = lo2 + (hi2 - lo2 + 1) / 2;
-                if (cache[mid] <= offset)
+                if (GetCacheOffset(mid) <= offset)
                     lo2 = mid;
                 else
                     hi2 = mid - 1;
@@ -675,23 +776,48 @@ public sealed class PieceTable : IDisposable
 
         if (lineDelta == 0)
         {
-            // No lines added or removed — just shift offsets after startLine.
+            // No lines added or removed — accumulate a virtual shift instead
+            // of modifying array entries in-place.  This avoids corrupting
+            // the MemoryMappedFileSource's shared _lineOffsets array.
             if (charDelta != 0)
             {
-                for (long i = startLine + 1; i < _lineOffsetCache.Length; i++)
-                    _lineOffsetCache[i] += charDelta;
+                if (_pendingDeltaLine >= 0 && startLine != _pendingDeltaLine)
+                {
+                    // New edit is on a different line from the existing delta
+                    // boundary — materialize the old delta first.  A single
+                    // (line, amount) pair can only represent shifts for lines
+                    // after one boundary; mixing two different boundaries
+                    // would corrupt intermediate line offsets.
+                    MaterializePendingDelta();
+                }
+
+                if (_pendingDeltaLine < 0)
+                {
+                    _pendingDeltaLine = startLine;
+                    _pendingDeltaAmount = charDelta;
+                }
+                else
+                {
+                    // Same line — accumulate the shift.
+                    _pendingDeltaAmount += charDelta;
+                    // If the net shift is zero, clear the pending state so it
+                    // doesn't interfere with future edits on different lines.
+                    if (_pendingDeltaAmount == 0)
+                        _pendingDeltaLine = -1;
+                }
             }
         }
         else if (lineDelta > 0)
         {
             // Lines were added — grow the cache array.
-            long oldCacheLen = _lineOffsetCache.Length;
+            // Materialize any pending delta into the new array.
+            long oldCacheLen = _lineOffsetCacheValidCount;
             long newCacheLen = oldCacheLen + lineDelta;
             var newCache = new long[newCacheLen];
 
             // Copy entries [0..startLine] unchanged.
             for (long i = 0; i <= startLine && i < oldCacheLen; i++)
-                newCache[i] = _lineOffsetCache[i];
+                newCache[i] = GetCacheOffset(i);
 
             // Compute new line starts in the inserted text.
             long insertPos = startLine + 1;
@@ -710,21 +836,25 @@ public sealed class PieceTable : IDisposable
             // Skip over removed line entries and copy remaining shifted entries.
             long srcStart = startLine + 1 + removedLines;
             for (long i = srcStart; i < oldCacheLen; i++)
-                newCache[insertPos++] = _lineOffsetCache[i] + charDelta;
+                newCache[insertPos++] = GetCacheOffset(i) + charDelta;
 
             _lineOffsetCache = newCache;
+            _lineOffsetCacheValidCount = newCache.Length;
+            _pendingDeltaLine = -1;
+            _pendingDeltaAmount = 0;
         }
         else
         {
             // Lines were removed — shrink the cache array.
-            long oldCacheLen = _lineOffsetCache.Length;
+            // Materialize any pending delta into the new array.
+            long oldCacheLen = _lineOffsetCacheValidCount;
             long newCacheLen = oldCacheLen + lineDelta; // lineDelta is negative
             if (newCacheLen < 1) newCacheLen = 1;
             var newCache = new long[newCacheLen];
 
             // Copy entries [0..startLine] unchanged.
             for (long i = 0; i <= startLine && i < newCacheLen; i++)
-                newCache[i] = _lineOffsetCache[i];
+                newCache[i] = GetCacheOffset(i);
 
             // Compute any new line starts from inserted text.
             long insertPos = startLine + 1;
@@ -744,58 +874,35 @@ public sealed class PieceTable : IDisposable
             // Skip over removed line entries and copy remaining shifted entries.
             long srcStart = startLine + 1 + removedLines;
             for (long i = srcStart; i < oldCacheLen && insertPos < newCacheLen; i++)
-                newCache[insertPos++] = _lineOffsetCache[i] + charDelta;
+                newCache[insertPos++] = GetCacheOffset(i) + charDelta;
 
             _lineOffsetCache = newCache;
+            _lineOffsetCacheValidCount = newCache.Length;
+            _pendingDeltaLine = -1;
+            _pendingDeltaAmount = 0;
         }
 
-        // Safety: if the cache length doesn't match LineCount, fall back to full rebuild.
-        if (_lineOffsetCache is not null && _lineOffsetCache.Length != LineCount)
+        // Safety: if the cache length doesn't match LineCount, rebuild via bulk reads.
+        if (_lineOffsetCache is not null && _lineOffsetCacheValidCount != LineCount)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[PieceTable] Line offset cache mismatch: cache={_lineOffsetCacheValidCount}, LineCount={LineCount}. Rebuilding.");
             _lineOffsetCache = null;
+            _lineOffsetCacheValidCount = 0;
+            _pendingDeltaLine = -1;
+            _pendingDeltaAmount = 0;
+            PrecomputeLineOffsets();
+        }
     }
 
     /// <summary>
-    /// Ensures the line-offset cache is built.  The cache maps every line
-    /// index to its start character offset, enabling O(1) lookups and
-    /// O(log N) binary-search for offset-to-line conversions.
-    /// Built with a single O(N) sequential scan of the document.
+    /// Ensures the line-offset cache is built.  Delegates to
+    /// <see cref="PrecomputeLineOffsets"/> which uses 64 KB bulk reads
+    /// instead of per-character <see cref="ReadChar"/> calls.
     /// </summary>
     private void EnsureLineOffsetCache()
     {
-        if (_lineOffsetCache is not null) return;
-
-        long lc = LineCount;
-        if (lc == 0)
-        {
-            _lineOffsetCache = [];
-            return;
-        }
-
-        var offsets = new long[lc];
-        offsets[0] = 0;
-        long lineIndex = 1;
-        long docOffset = 0;
-
-        foreach (RBNode node in _tree.InOrderNodes())
-        {
-            if (lineIndex >= lc) break;
-
-            long start = node.Piece.Start;
-            long len = node.Piece.Length;
-
-            for (long i = 0; i < len; i++)
-            {
-                if (ReadChar(node.Piece.BufferType, start + i) == '\n')
-                {
-                    if (lineIndex < lc)
-                        offsets[lineIndex++] = docOffset + i + 1;
-                }
-            }
-
-            docOffset += len;
-        }
-
-        _lineOffsetCache = offsets;
+        PrecomputeLineOffsets();
     }
 
     /// <summary>
@@ -823,6 +930,144 @@ public sealed class PieceTable : IDisposable
         long totalLF = leftLF + node.Piece.LineFeeds + rightLF;
 
         return (totalLen, totalLF);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  State access (crash recovery)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the current contents of the append-only add buffer.
+    /// Used by the recovery system to serialize the piece table state.
+    /// </summary>
+    public string GetAddBufferContents() => _addBuffer.ToString();
+
+    /// <summary>
+    /// Returns all pieces in document order (in-order tree traversal).
+    /// Used by the recovery system to serialize the piece table state.
+    /// </summary>
+    public IReadOnlyList<Piece> GetPiecesInOrder()
+    {
+        var list = new List<Piece>();
+        foreach (var node in _tree.InOrderNodes())
+            list.Add(node.Piece);
+        return list;
+    }
+
+    /// <summary>
+    /// Restoration constructor: rebuilds a <see cref="PieceTable"/> from a
+    /// serialized original source, add buffer contents, and ordered piece list.
+    /// The line-offset cache is left null — call <see cref="PrecomputeLineOffsets"/>
+    /// on a background thread before setting this as a Document to avoid UI freeze.
+    /// </summary>
+    public PieceTable(ITextSource original, string addBufferContents, IReadOnlyList<Piece> pieces)
+    {
+        _original = original ?? throw new ArgumentNullException(nameof(original));
+        _addBuffer = new StringBuilder(addBufferContents ?? string.Empty);
+        _tree = new RedBlackTree();
+
+        // Insert pieces with LineFeeds = -1 so that FixupLineFeeds recomputes
+        // them from the current source.  Recovery files may store stale counts
+        // that disagree with the current source's line-offset table, causing
+        // LineCount vs cache-length mismatches.
+        RBNode? last = null;
+        foreach (var piece in pieces)
+        {
+            var fixedPiece = new Piece(piece.BufferType, piece.Start, piece.Length, -1);
+            var node = new RBNode(fixedPiece, NodeColor.Red);
+            _tree.InsertAfter(last, node);
+            last = node;
+        }
+        FixupLineFeeds();
+    }
+
+    /// <summary>
+    /// Sets a pre-computed line-offset cache, avoiding the lazy O(N) scan in
+    /// <see cref="EnsureLineOffsetCache"/>.  The array must have exactly
+    /// <see cref="LineCount"/> entries with <c>offsets[0] == 0</c>.
+    /// </summary>
+    public void SetLineOffsetCache(long[] offsets)
+    {
+        _lineOffsetCache = offsets;
+        _lineOffsetCacheValidCount = offsets.Length;
+        _pendingDeltaLine = -1;
+        _pendingDeltaAmount = 0;
+    }
+
+    /// <summary>
+    /// Sets a pre-computed line-offset cache from an oversized buffer.
+    /// <paramref name="validCount"/> entries are used; the rest are ignored.
+    /// Avoids per-batch array allocation during incremental loading.
+    /// </summary>
+    public void SetLineOffsetCache(long[] offsets, int validCount)
+    {
+        _lineOffsetCache = offsets;
+        _lineOffsetCacheValidCount = validCount;
+        _pendingDeltaLine = -1;
+        _pendingDeltaAmount = 0;
+    }
+
+    /// <summary>
+    /// Builds the line-offset cache using efficient bulk reads (64 KB chunks)
+    /// instead of per-character <see cref="ReadChar"/> calls.  Call this on a
+    /// background thread for large documents before assigning to
+    /// <c>EditorControl.Document</c> (whose setter triggers
+    /// <c>EnsureLineOffsetCache</c> synchronously on the UI thread).
+    /// </summary>
+    public void PrecomputeLineOffsets()
+    {
+        if (_lineOffsetCache is not null) return;
+
+        long lc = LineCount;
+        if (lc == 0)
+        {
+            _lineOffsetCache = [];
+            _lineOffsetCacheValidCount = 0;
+            return;
+        }
+
+        var offsets = new long[lc];
+        offsets[0] = 0;
+        long lineIndex = 1;
+        long docOffset = 0;
+
+        const int BulkSize = 65536;
+
+        foreach (RBNode node in _tree.InOrderNodes())
+        {
+            if (lineIndex >= lc) break;
+
+            long pieceStart = node.Piece.Start;
+            long pieceLen = node.Piece.Length;
+            long pieceRead = 0;
+
+            while (pieceRead < pieceLen && lineIndex < lc)
+            {
+                int take = (int)Math.Min(pieceLen - pieceRead, BulkSize);
+
+                string chunk = node.Piece.BufferType == BufferType.Original
+                    ? _original.GetText(pieceStart + pieceRead, take)
+                    : _addBuffer.ToString((int)(pieceStart + pieceRead), take);
+
+                for (int i = 0; i < chunk.Length; i++)
+                {
+                    if (chunk[i] == '\n')
+                    {
+                        if (lineIndex < lc)
+                            offsets[lineIndex++] = docOffset + pieceRead + i + 1;
+                    }
+                }
+
+                pieceRead += take;
+            }
+
+            docOffset += pieceLen;
+        }
+
+        _lineOffsetCache = offsets;
+        _lineOffsetCacheValidCount = offsets.Length;
+        _pendingDeltaLine = -1;
+        _pendingDeltaAmount = 0;
     }
 
     // ────────────────────────────────────────────────────────────────────

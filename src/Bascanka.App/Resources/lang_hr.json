@@ -71,6 +71,8 @@
     "MenuFullScreen": "&Cijeli zaslon",
     "MenuSymbolList": "Popis &simbola",
     "MenuFindResults": "Rezultati &pretra\u017eivanja",
+    "MenuTerminal": "&Terminal",
+    "MenuFolding": "S&avijanje",
     "MenuToggleFold": "Preklopni &savijanje",
     "MenuFoldAll": "Savij sv&e",
     "MenuUnfoldAll": "&Ra\u0161iri sve",
@@ -90,6 +92,7 @@
     "DiffNoDifferences": "Datoteke su identi\u010dne.",
     "CompareSelectFirstFile": "Odaberite prvu datoteku za usporedbu",
     "CompareSelectSecondFile": "Odaberite drugu datoteku za usporedbu",
+    "MenuOpenAppData": "Otvori mapu &aplikacijskih podataka",
     "MenuSettings": "P&ostavke...",
 
     "MenuPlugins": "D&odaci",
@@ -116,6 +119,7 @@
     "ErrorFileNotFound": "Datoteka nije prona\u0111ena: {0}",
     "ErrorOpeningFile": "Gre\u0161ka pri otvaranju datoteke \"{0}\": {1}",
     "ErrorSavingFile": "Gre\u0161ka pri spremanju datoteke \"{0}\": {1}",
+    "FileStillLoading": "Datoteka se jo\u0161 u\u010ditava. Pri\u010dekajte zavr\u0161etak u\u010ditavanja prije spremanja.",
     "ErrorNoDocumentOpen": "Nijedan dokument nije otvoren.",
     "ErrorUnhandledException": "Do\u0161lo je do neo\u010dekivane gre\u0161ke: {0}\n\nDetalji:\n{1}",
     "ErrorCompilingScript": "Kompilacija skriptnog dodatka nije uspjela.",
@@ -125,11 +129,20 @@
 
     "CommandPaletteNotYetImplemented": "Paleta naredbi bit \u0107e dostupna u budu\u0107oj verziji.",
 
+    "SavingProgressFormat": "Spremanje\u2026 {0} / {1}",
+    "ReloadingAfterSave": "Ponovno u\u010ditavanje datoteke\u2026",
+    "ReloadingProgressFormat": "Ponovno u\u010ditavanje\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "Zum: {0}%",
 
     "SettingsTitle": "Postavke",
-    "SettingsExplorerContextMenu": "Registriraj \"Edit with Bascanka\" u kontekstni izbornik Windows Explorera",
+    "ContextMenuEditWith": "Uredi s Bascankom",
+    "SettingsExplorerContextMenu": "Registriraj \"Edit with Bascanka\" u stari kontekstni izbornik Windows Explorera",
     "SettingsExplorerContextMenuDesc": "Dodaje opciju desnog klika za otvaranje datoteka s Bascankom u Windows Exploreru.",
+    "SettingsNewExplorerContextMenu": "Registriraj \"Edit with Bascanka\" u moderni kontekstni izbornik Windows Explorera (zahtijeva ponovno pokretanje Explorera)",
+    "SettingsNewExplorerContextMenuDesc": "Prikazuje \"Edit with Bascanka\" u novom kontekstnom izborniku Explorera bez klika na \"Prikaži više opcija\".",
+    "SettingsNewExplorerContextMenuError": "Registracija novog kontekstnog izbornika Explorera nije uspjela: {0}",
+    "SettingsNewExplorerRestartExplorer": "Windows Explorer se mora ponovno pokrenuti da bi promjena stupila na snagu. Ponovno pokrenuti sada?",
 
     "SettingsCategoryEditor": "Uređivač",
     "SettingsCategoryDisplay": "Prikaz",
@@ -179,8 +192,14 @@
     "SettingsTabHeightUnit": "px",
     "SettingsMinTabWidth": "Min. širina kartice",
     "SettingsMinTabWidthUnit": "px",
+    "SettingsMenuItemPadding": "Razmak stavki izbornika",
+    "SettingsMenuItemPaddingUnit": "px",
+    "SettingsTerminalPadding": "Razmak terminala",
+    "SettingsTerminalPaddingUnit": "px",
     "SettingsSearchDebounce": "Odgoda pretraživanja",
     "SettingsSearchDebounceUnit": "ms",
+    "SettingsAutoSaveInterval": "Interval automatskog spremanja",
+    "SettingsAutoSaveIntervalUnit": "s",
 
     "SettingsCategoryAppearance": "Izgled",
 
@@ -194,6 +213,8 @@
     "SettingsThemeDesc": "Ukupna shema boja za sučelje uređivača.",
     "SettingsUILanguage": "Jezik sučelja",
     "SettingsUILanguageDesc": "Jezik koji se koristi za izbornike, dijaloge i oznake.",
+    "SettingsRecentFilesSeparated": "Razdvojene nedavne datoteke",
+    "SettingsRecentFilesSeparatedDesc": "Prikaz nedavnih datoteka s mapom i nazivom u odvojenim stupcima.",
 
     "SettingsCaretBlinkRateDesc": "Interval u milisekundama između treptanja kursora.",
     "SettingsTextLeftPaddingDesc": "Vodoravni razmak između žlijeba i prvog znaka.",
@@ -208,12 +229,15 @@
     "SettingsTabHeightDesc": "Visina trake kartica u pikselima.",
     "SettingsMaxTabWidthDesc": "Maksimalna širina jedne kartice u pikselima.",
     "SettingsMinTabWidthDesc": "Minimalna širina jedne kartice u pikselima.",
+    "SettingsMenuItemPaddingDesc": "Vertikalni razmak stavki izbornika u pikselima.",
+    "SettingsTerminalPaddingDesc": "Unutarnji razmak terminala u pikselima.",
 
     "SettingsLargeFileThresholdDesc": "Datoteke iznad ove veličine koriste memorijsko mapiranje za performanse.",
     "SettingsFoldingMaxFileSizeDesc": "Savijanje koda onemogućeno je za datoteke veće od ovoga.",
     "SettingsMaxRecentFilesDesc": "Maksimalan broj unosa u popisu nedavnih datoteka.",
     "SettingsSearchHistoryLimitDesc": "Maksimalan broj spremljenih pojmova pretraživanja.",
     "SettingsSearchDebounceDesc": "Odgoda prije pokretanja pretraživanja uživo nakon tipkanja.",
+    "SettingsAutoSaveIntervalDesc": "Koliko često se nespremljene promjene sigurnosno kopiraju za oporavak.",
 
     "SettingsColorCustomization": "Prilagodba boja",
     "SettingsColorReset": "Vrati",
@@ -325,6 +349,14 @@
     "CustomHighlightNewProfile": "Novi profil",
     "CustomHighlightEndPattern": "Završni uzorak",
     "CustomHighlightFoldable": "Savijanje",
-    "CustomHighlightScopeBlock": "blok"
+    "CustomHighlightScopeBlock": "blok",
+    "CustomHighlightExport": "Izvezi...",
+    "CustomHighlightImport": "Uvezi...",
+    "CustomHighlightExportSuccess": "Profili uspješno izvezeni.",
+    "CustomHighlightExportEmpty": "Nema profila za izvoz.",
+    "CustomHighlightImportSuccess": "{0} profil(a) uspješno uvezeno.",
+    "CustomHighlightImportError": "Odabrana datoteka ne sadrži valjane profile isticanja.",
+    "CustomHighlightPickColor": "Odaberi boju...",
+    "CustomHighlightClearColor": "Ukloni boju"
   }
 }

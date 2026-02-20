@@ -77,6 +77,8 @@ internal static class Strings
     internal static string MenuFullScreen => LocalizationManager.Get("MenuFullScreen");
     internal static string MenuSymbolList => LocalizationManager.Get("MenuSymbolList");
     internal static string MenuFindResults => LocalizationManager.Get("MenuFindResults");
+    internal static string MenuTerminal => LocalizationManager.Get("MenuTerminal");
+    internal static string MenuFolding => LocalizationManager.Get("MenuFolding");
     internal static string MenuToggleFold => LocalizationManager.Get("MenuToggleFold");
     internal static string MenuFoldAll => LocalizationManager.Get("MenuFoldAll");
     internal static string MenuUnfoldAll => LocalizationManager.Get("MenuUnfoldAll");
@@ -128,6 +130,7 @@ internal static class Strings
     internal static string SedPreviewApply => LocalizationManager.Get("SedPreviewApply");
     internal static string SedPreviewDiscard => LocalizationManager.Get("SedPreviewDiscard");
     internal static string SedReplacementCount => LocalizationManager.Get("SedReplacementCount");
+    internal static string MenuOpenAppData => LocalizationManager.Get("MenuOpenAppData");
     internal static string MenuSettings => LocalizationManager.Get("MenuSettings");
 
     // Plugins Menu
@@ -161,6 +164,7 @@ internal static class Strings
     internal static string ErrorFileNotFound => LocalizationManager.Get("ErrorFileNotFound");
     internal static string ErrorOpeningFile => LocalizationManager.Get("ErrorOpeningFile");
     internal static string ErrorSavingFile => LocalizationManager.Get("ErrorSavingFile");
+    internal static string FileStillLoading => LocalizationManager.Get("FileStillLoading");
     internal static string ErrorNoDocumentOpen => LocalizationManager.Get("ErrorNoDocumentOpen");
     internal static string ErrorUnhandledException => LocalizationManager.Get("ErrorUnhandledException");
     internal static string ErrorCompilingScript => LocalizationManager.Get("ErrorCompilingScript");
@@ -173,13 +177,25 @@ internal static class Strings
     internal static string CommandPaletteNotYetImplemented => LocalizationManager.Get("CommandPaletteNotYetImplemented");
 
 
+    // Save progress
+    internal static string SavingProgressFormat => LocalizationManager.Get("SavingProgressFormat");
+    internal static string ReloadingAfterSave => LocalizationManager.Get("ReloadingAfterSave");
+    internal static string ReloadingProgressFormat => LocalizationManager.Get("ReloadingProgressFormat");
+
     // Zoom
     internal static string ZoomLevelFormat => LocalizationManager.Get("ZoomLevelFormat");
+
+    // Context menu
+    internal static string ContextMenuEditWith => LocalizationManager.Get("ContextMenuEditWith");
 
     // Settings
     internal static string SettingsTitle => LocalizationManager.Get("SettingsTitle");
     internal static string SettingsExplorerContextMenu => LocalizationManager.Get("SettingsExplorerContextMenu");
     internal static string SettingsExplorerContextMenuDesc => LocalizationManager.Get("SettingsExplorerContextMenuDesc");
+    internal static string SettingsNewExplorerContextMenu => LocalizationManager.Get("SettingsNewExplorerContextMenu");
+    internal static string SettingsNewExplorerContextMenuDesc => LocalizationManager.Get("SettingsNewExplorerContextMenuDesc");
+    internal static string SettingsNewExplorerContextMenuError => LocalizationManager.Get("SettingsNewExplorerContextMenuError");
+    internal static string SettingsNewExplorerRestartExplorer => LocalizationManager.Get("SettingsNewExplorerRestartExplorer");
 
     // Settings categories
     internal static string SettingsCategoryEditor => LocalizationManager.Get("SettingsCategoryEditor");
@@ -235,10 +251,16 @@ internal static class Strings
     internal static string SettingsTabHeightUnit => LocalizationManager.Get("SettingsTabHeightUnit");
     internal static string SettingsMinTabWidth => LocalizationManager.Get("SettingsMinTabWidth");
     internal static string SettingsMinTabWidthUnit => LocalizationManager.Get("SettingsMinTabWidthUnit");
+    internal static string SettingsMenuItemPadding => LocalizationManager.Get("SettingsMenuItemPadding");
+    internal static string SettingsMenuItemPaddingUnit => LocalizationManager.Get("SettingsMenuItemPaddingUnit");
+    internal static string SettingsTerminalPadding => LocalizationManager.Get("SettingsTerminalPadding");
+    internal static string SettingsTerminalPaddingUnit => LocalizationManager.Get("SettingsTerminalPaddingUnit");
 
     // Settings labels — Performance (continued)
     internal static string SettingsSearchDebounce => LocalizationManager.Get("SettingsSearchDebounce");
     internal static string SettingsSearchDebounceUnit => LocalizationManager.Get("SettingsSearchDebounceUnit");
+    internal static string SettingsAutoSaveInterval => LocalizationManager.Get("SettingsAutoSaveInterval");
+    internal static string SettingsAutoSaveIntervalUnit => LocalizationManager.Get("SettingsAutoSaveIntervalUnit");
 
     // Settings categories (continued)
     internal static string SettingsCategoryAppearance => LocalizationManager.Get("SettingsCategoryAppearance");
@@ -255,6 +277,8 @@ internal static class Strings
     internal static string SettingsThemeDesc => LocalizationManager.Get("SettingsThemeDesc");
     internal static string SettingsUILanguage => LocalizationManager.Get("SettingsUILanguage");
     internal static string SettingsUILanguageDesc => LocalizationManager.Get("SettingsUILanguageDesc");
+    internal static string SettingsRecentFilesSeparated => LocalizationManager.Get("SettingsRecentFilesSeparated");
+    internal static string SettingsRecentFilesSeparatedDesc => LocalizationManager.Get("SettingsRecentFilesSeparatedDesc");
 
     // Settings descriptions — Display
     internal static string SettingsCaretBlinkRateDesc => LocalizationManager.Get("SettingsCaretBlinkRateDesc");
@@ -270,6 +294,8 @@ internal static class Strings
     internal static string SettingsTabHeightDesc => LocalizationManager.Get("SettingsTabHeightDesc");
     internal static string SettingsMaxTabWidthDesc => LocalizationManager.Get("SettingsMaxTabWidthDesc");
     internal static string SettingsMinTabWidthDesc => LocalizationManager.Get("SettingsMinTabWidthDesc");
+    internal static string SettingsMenuItemPaddingDesc => LocalizationManager.Get("SettingsMenuItemPaddingDesc");
+    internal static string SettingsTerminalPaddingDesc => LocalizationManager.Get("SettingsTerminalPaddingDesc");
 
     // Settings descriptions — Performance
     internal static string SettingsLargeFileThresholdDesc => LocalizationManager.Get("SettingsLargeFileThresholdDesc");
@@ -277,6 +303,7 @@ internal static class Strings
     internal static string SettingsMaxRecentFilesDesc => LocalizationManager.Get("SettingsMaxRecentFilesDesc");
     internal static string SettingsSearchHistoryLimitDesc => LocalizationManager.Get("SettingsSearchHistoryLimitDesc");
     internal static string SettingsSearchDebounceDesc => LocalizationManager.Get("SettingsSearchDebounceDesc");
+    internal static string SettingsAutoSaveIntervalDesc => LocalizationManager.Get("SettingsAutoSaveIntervalDesc");
 
     // Color customization
     internal static string SettingsColorCustomization => LocalizationManager.Get("SettingsColorCustomization");
@@ -370,4 +397,12 @@ internal static class Strings
     internal static string CustomHighlightEndPattern => LocalizationManager.Get("CustomHighlightEndPattern");
     internal static string CustomHighlightFoldable => LocalizationManager.Get("CustomHighlightFoldable");
     internal static string CustomHighlightScopeBlock => LocalizationManager.Get("CustomHighlightScopeBlock");
+    internal static string CustomHighlightExport => LocalizationManager.Get("CustomHighlightExport");
+    internal static string CustomHighlightImport => LocalizationManager.Get("CustomHighlightImport");
+    internal static string CustomHighlightExportSuccess => LocalizationManager.Get("CustomHighlightExportSuccess");
+    internal static string CustomHighlightExportEmpty => LocalizationManager.Get("CustomHighlightExportEmpty");
+    internal static string CustomHighlightImportSuccess => LocalizationManager.Get("CustomHighlightImportSuccess");
+    internal static string CustomHighlightImportError => LocalizationManager.Get("CustomHighlightImportError");
+    internal static string CustomHighlightPickColor => LocalizationManager.Get("CustomHighlightPickColor");
+    internal static string CustomHighlightClearColor => LocalizationManager.Get("CustomHighlightClearColor");
 }

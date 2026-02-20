@@ -63,3 +63,5 @@ TestResult.xml
 
 # Publish
 publish/
+
+!src/Bascanka.App/Resources/Bascanka.Explorer.ContextMenu.dll

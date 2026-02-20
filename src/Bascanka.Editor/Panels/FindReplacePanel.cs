@@ -17,6 +17,20 @@ public class FindReplacePanel : UserControl
     // ── Constants ─────────────────────────────────────────────────────
     /// <summary>Configurable max search history entries (default 25).</summary>
     public static int ConfigMaxHistoryItems { get; set; } = 25;
+
+    /// <summary>Returns a copy of the current search history.</summary>
+    public static IReadOnlyList<string> GetSearchHistory() => _searchHistory.ToList();
+
+    /// <summary>Replaces the search history with the given items.</summary>
+    public static void SetSearchHistory(IEnumerable<string> items)
+    {
+        _searchHistory.Clear();
+        foreach (string item in items)
+        {
+            if (!string.IsNullOrWhiteSpace(item) && _searchHistory.Count < ConfigMaxHistoryItems)
+                _searchHistory.Add(item);
+        }
+    }
     private static int DebounceMsec => EditorControl.DefaultSearchDebounce;
     private const int PanelWidth = 520;
     private const int FindRowHeight = 40;
@@ -46,7 +60,7 @@ public class FindReplacePanel : UserControl
 
     // ── State ─────────────────────────────────────────────────────────
     private readonly SearchEngine _searchEngine = new();
-    private readonly List<string> _searchHistory = [];
+    private static readonly List<string> _searchHistory = [];
     private readonly System.Windows.Forms.Timer _debounceTimer;
     private CancellationTokenSource? _searchCts;
     private bool _matchCase;
@@ -118,6 +132,9 @@ public class FindReplacePanel : UserControl
         };
         _searchBox.TextChanged += (_, _) => RestartDebounce();
         _searchBox.KeyDown += OnSearchBoxKeyDown;
+        // Populate from shared history.
+        foreach (string item in _searchHistory)
+            _searchBox.Items.Add(item);
 
         // ── Toggle buttons ────────────────────────────────────────────
         _btnMatchCase = CreateToggleButton("Aa", "Match Case");
@@ -745,7 +762,8 @@ public class FindReplacePanel : UserControl
         // Called on parent resize too — keeps us right-aligned.
         if (Parent is not null)
         {
-            int x = Parent.ClientSize.Width - PanelWidth - 16;
+            int scrollBarW = SystemInformation.VerticalScrollBarWidth;
+            int x = Parent.ClientSize.Width - PanelWidth - scrollBarW - 2;
             if (x < 0) x = 0;
             Location = new Point(x, 0);
             Width = Math.Min(PanelWidth, Parent.ClientSize.Width);

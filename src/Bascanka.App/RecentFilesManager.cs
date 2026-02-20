@@ -5,15 +5,15 @@ namespace Bascanka.App;
 /// <summary>
 /// Manages the most-recently-used (MRU) file list. Persists up to
 /// <see cref="MaxRecentFiles"/> entries to a JSON file in the user's
-/// AppData folder.
+/// AppData folder. Always reads from disk so multiple app instances
+/// share the same list.
 /// </summary>
 public sealed class RecentFilesManager
 {
     /// <summary>Maximum number of recent files to retain.</summary>
     public static int MaxRecentFiles { get; set; } = 20;
 
-    private static readonly string DataDirectory =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Bascanka");
+    private static readonly string DataDirectory = SettingsManager.AppDataFolder;
 
     private static readonly string RecentFilePath =
         Path.Combine(DataDirectory, "recent.json");
@@ -23,17 +23,11 @@ public sealed class RecentFilesManager
         WriteIndented = true,
     };
 
-    private readonly List<string> _recentFiles;
-
-    public RecentFilesManager()
-    {
-        _recentFiles = Load();
-    }
-
     /// <summary>
     /// Adds a file path to the top of the recent files list.
     /// If the path already exists, it is moved to the top.
     /// The list is truncated to <see cref="MaxRecentFiles"/> entries.
+    /// Reloads from disk first to merge changes from other instances.
     /// </summary>
     public void AddFile(string path)
     {
@@ -41,26 +35,30 @@ public sealed class RecentFilesManager
 
         string fullPath = Path.GetFullPath(path);
 
+        // Reload from disk to incorporate changes from other instances.
+        var files = Load();
+
         // Remove if already present (to move to top).
-        _recentFiles.RemoveAll(f =>
+        files.RemoveAll(f =>
             string.Equals(f, fullPath, StringComparison.OrdinalIgnoreCase));
 
         // Insert at the beginning.
-        _recentFiles.Insert(0, fullPath);
+        files.Insert(0, fullPath);
 
         // Trim to maximum.
-        while (_recentFiles.Count > MaxRecentFiles)
-            _recentFiles.RemoveAt(_recentFiles.Count - 1);
+        while (files.Count > MaxRecentFiles)
+            files.RemoveAt(files.Count - 1);
 
-        Save();
+        Save(files);
     }
 
     /// <summary>
     /// Returns the list of recent file paths, most recent first.
+    /// Always reloads from disk so changes from other instances are visible.
     /// </summary>
     public IReadOnlyList<string> GetRecentFiles()
     {
-        return _recentFiles.AsReadOnly();
+        return Load().AsReadOnly();
     }
 
     /// <summary>
@@ -68,19 +66,23 @@ public sealed class RecentFilesManager
     /// </summary>
     public void ClearRecentFiles()
     {
-        _recentFiles.Clear();
-        Save();
+        Save(new List<string>());
     }
 
     // ── Persistence ──────────────────────────────────────────────────
 
-    private void Save()
+    private static void Save(List<string> files)
     {
         try
         {
             Directory.CreateDirectory(DataDirectory);
-            string json = JsonSerializer.Serialize(_recentFiles, JsonOptions);
-            File.WriteAllText(RecentFilePath, json);
+            string json = JsonSerializer.Serialize(files, JsonOptions);
+
+            // Atomic write: write to .tmp then rename, to avoid corruption
+            // if another instance reads concurrently.
+            string tmpPath = RecentFilePath + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, RecentFilePath, overwrite: true);
         }
         catch (Exception ex)
         {

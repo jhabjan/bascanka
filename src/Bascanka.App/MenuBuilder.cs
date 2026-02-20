@@ -49,6 +49,7 @@ public sealed class MenuBuilder
     private ToolStripMenuItem? _showWhitespaceItem;
     private ToolStripMenuItem? _lineNumbersItem;
     private ToolStripMenuItem? _findResultsItem;
+    private ToolStripMenuItem? _terminalItem;
 
     // Tools menu items for enable/disable toggling.
     private ToolStripMenuItem? _hexEditorItem;
@@ -94,13 +95,57 @@ public sealed class MenuBuilder
             return;
         }
 
+        bool separated = SettingsManager.GetBool(SettingsManager.KeyRecentFilesSeparated, true);
+
+        var items = new List<RecentFileMenuItem>();
         foreach (string path in recent)
         {
-            string displayPath = path;
             string capturedPath = path;
-            var item = new ToolStripMenuItem(displayPath);
+            var item = new RecentFileMenuItem(path);
             item.Click += (_, _) => form.OpenFile(capturedPath);
-            _recentFilesMenu.DropDownItems.Add(item);
+            items.Add(item);
+        }
+
+        if (separated)
+        {
+            // Measure the widest DisplayName and DisplayDir in pixels to
+            // build a Text string that auto-sizes the menu wide enough
+            // for the two-column layout drawn by ThemedMenuRenderer.
+            var font = _recentFilesMenu.Font;
+            var measureFlags = TextFormatFlags.NoPrefix;
+            var big = new Size(int.MaxValue, int.MaxValue);
+            int maxNameW = 0;
+            int maxDirW = 0;
+            foreach (var item in items)
+            {
+                maxNameW = Math.Max(maxNameW, TextRenderer.MeasureText(item.DisplayName, font, big, measureFlags).Width);
+                maxDirW = Math.Max(maxDirW, TextRenderer.MeasureText(item.DisplayDir, font, big, measureFlags).Width);
+            }
+
+            // Must match the gap constant in ThemedMenuRenderer.OnRenderItemText.
+            const int rendererGap = 16;
+            int targetW = maxNameW + rendererGap + maxDirW;
+
+            // Measure space width for pixel-accurate padding.
+            int spaceW = Math.Max(1, TextRenderer.MeasureText("          ", font, big, measureFlags).Width / 10);
+
+            foreach (var item in items)
+            {
+                item.NameColumnWidth = maxNameW;
+                // Start with minimal gap, then add spaces until the measured
+                // Text width is at least targetW so the renderer has room.
+                string baseText = item.DisplayName + "  " + item.DisplayDir;
+                int baseW = TextRenderer.MeasureText(baseText, font, big, measureFlags).Width;
+                int extra = baseW < targetW ? (targetW - baseW + spaceW - 1) / spaceW : 0;
+                item.Text = item.DisplayName + new string(' ', 2 + extra) + item.DisplayDir;
+                _recentFilesMenu.DropDownItems.Add(item);
+            }
+        }
+        else
+        {
+            // Simple full-path list.
+            foreach (var item in items)
+                _recentFilesMenu.DropDownItems.Add(item);
         }
 
         _recentFilesMenu.DropDownItems.Add(new ToolStripSeparator());
@@ -179,6 +224,7 @@ public sealed class MenuBuilder
             () => form.OpenFile()));
 
         _recentFilesMenu = new ToolStripMenuItem(Strings.MenuOpenRecent);
+        _recentFilesMenu.DropDownOpening += (_, _) => RefreshRecentFilesMenu(form);
         RefreshRecentFilesMenu(form);
         menu.DropDownItems.Add(_recentFilesMenu);
 
@@ -387,12 +433,14 @@ public sealed class MenuBuilder
 
         menu.DropDownItems.Add(new ToolStripSeparator());
 
-        menu.DropDownItems.Add(MakeItem(Strings.MenuToggleFold, Keys.Control | Keys.Shift | Keys.OemOpenBrackets,
+        var foldingMenu = new ToolStripMenuItem(Strings.MenuFolding);
+        foldingMenu.DropDownItems.Add(MakeItem(Strings.MenuToggleFold, Keys.Control | Keys.Shift | Keys.OemOpenBrackets,
             () => form.ToggleFoldAtCaret()));
-        menu.DropDownItems.Add(MakeItem(Strings.MenuFoldAll, Keys.Control | Keys.Shift | Keys.OemMinus,
+        foldingMenu.DropDownItems.Add(MakeItem(Strings.MenuFoldAll, Keys.Control | Keys.Shift | Keys.OemMinus,
             () => form.FoldAll()));
-        menu.DropDownItems.Add(MakeItem(Strings.MenuUnfoldAll, Keys.Control | Keys.Shift | Keys.Oemplus,
+        foldingMenu.DropDownItems.Add(MakeItem(Strings.MenuUnfoldAll, Keys.Control | Keys.Shift | Keys.Oemplus,
             () => form.UnfoldAll()));
+        menu.DropDownItems.Add(foldingMenu);
 
         menu.DropDownItems.Add(new ToolStripSeparator());
 
@@ -415,9 +463,17 @@ public sealed class MenuBuilder
         menu.DropDownItems.Add(MakeItem(Strings.MenuSymbolList, Keys.None,
             () => form.ToggleSymbolList()));
 
+        menu.DropDownItems.Add(new ToolStripSeparator());
+
         _findResultsItem = MakeItem(Strings.MenuFindResults, Keys.None,
             () => { form.ToggleFindResults(); UpdateMenuState(form); });
         menu.DropDownItems.Add(_findResultsItem);
+
+        menu.DropDownItems.Add(new ToolStripSeparator());
+
+        _terminalItem = MakeItem(Strings.MenuTerminal, Keys.Control | Keys.Oemtilde,
+            () => { form.ToggleTerminal(); UpdateMenuState(form); });
+        menu.DropDownItems.Add(_terminalItem);
 
         return menu;
     }
@@ -613,6 +669,11 @@ public sealed class MenuBuilder
 
         menu.DropDownItems.Add(new ToolStripSeparator());
 
+        menu.DropDownItems.Add(MakeItem(Strings.MenuOpenAppData, Keys.None,
+            () => form.OpenAppDataFolder()));
+
+        menu.DropDownItems.Add(new ToolStripSeparator());
+
         menu.DropDownItems.Add(MakeItem(Strings.MenuSettings, Keys.None,
             () => form.ShowSettings()));
 
@@ -698,9 +759,11 @@ public sealed class MenuBuilder
         if (_showWhitespaceItem is not null) _showWhitespaceItem.Checked = hasTab && editor!.ShowWhitespace;
         if (_lineNumbersItem is not null) _lineNumbersItem.Checked = !hasTab || editor!.ShowLineNumbers;
 
-        // Find results panel checkmark.
+        // Bottom panel checkmarks.
         if (_findResultsItem is not null)
-            _findResultsItem.Checked = form.IsBottomPanelVisible;
+            _findResultsItem.Checked = form.IsBottomPanelVisible && form.IsFindResultsTabActive;
+        if (_terminalItem is not null)
+            _terminalItem.Checked = form.IsBottomPanelVisible && form.IsTerminalTabActive;
 
         // Tools menu.
         if (_hexEditorItem is not null)
@@ -794,5 +857,37 @@ public sealed class MenuBuilder
             "Markdown" => "markdown",
             _ => displayName.ToLowerInvariant(),
         };
+    }
+}
+
+/// <summary>
+/// Menu item for recent files. Stores the split path so the themed
+/// renderer can draw directory and filename in different colors.
+/// </summary>
+internal sealed class RecentFileMenuItem : ToolStripMenuItem
+{
+    public readonly string DisplayName;
+    public readonly string DisplayDir;
+    public int NameColumnWidth;
+
+    private const int MaxChars = 100;
+
+    public RecentFileMenuItem(string fullPath) : base(fullPath)
+    {
+        string fileName = Path.GetFileName(fullPath);
+        string dirPart = fullPath.Length > fileName.Length
+            ? fullPath[..^fileName.Length]
+            : string.Empty;
+        DisplayName = TruncateMiddle(fileName, MaxChars);
+        DisplayDir = TruncateMiddle(dirPart, MaxChars);
+    }
+
+    private static string TruncateMiddle(string text, int maxChars)
+    {
+        if (text.Length <= maxChars)
+            return text;
+
+        int half = (maxChars - 1) / 2; // -1 for the ellipsis character
+        return string.Concat(text.AsSpan(0, half), "\u2026", text.AsSpan(text.Length - half));
     }
 }

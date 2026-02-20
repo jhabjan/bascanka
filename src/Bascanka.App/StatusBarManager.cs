@@ -50,14 +50,19 @@ public sealed class StatusBarManager
         _encodingLabel = CreateClickableLabel("UTF-8", 90);
         _lineEndingLabel = CreateClickableLabel("CRLF", 50);
         _languageLabel = CreateClickableLabel(Strings.PlainText, 100);
-        _fileSizeLabel = CreateLabel("0 B", 70);
+        _fileSizeLabel = CreateLabel("0 B", 130);
         _insertModeLabel = CreateLabel("INS", 40);
         _readOnlyLabel = CreateLabel(string.Empty, 30);
         _zoomLabel = CreateLabel(string.Format(Strings.ZoomLevelFormat, 100), 90);
 
         string version = System.Reflection.Assembly.GetExecutingAssembly()
             .GetName().Version?.ToString(3) ?? "1.0.0";
-        _brandingLabel = new ToolStripStatusLabel($"Bascanka v.{version} \u00a9 jhabjan")
+#if DEBUG
+        string brandingText = $"Bascanka v.{version} \u00a9 jhabjan - DEBUG";
+#else
+        string brandingText = $"Bascanka v.{version} \u00a9 jhabjan";
+#endif
+        _brandingLabel = new ToolStripStatusLabel(brandingText)
         {
             Alignment = ToolStripItemAlignment.Right,
             TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
@@ -83,7 +88,7 @@ public sealed class StatusBarManager
             (_encodingLabel,   90),
             (_lineEndingLabel, 50),
             (_languageLabel,  100),
-            (_fileSizeLabel,   70),
+            (_fileSizeLabel,  130),
             (_insertModeLabel, 40),
             (_readOnlyLabel,   30),
             (_zoomLabel,       90),
@@ -168,6 +173,18 @@ public sealed class StatusBarManager
 
         // Read-only indicator.
         _readOnlyLabel.Text = editor.IsReadOnly ? "R/O" : string.Empty;
+    }
+
+    /// <summary>
+    /// Shows a loading progress indicator in the status bar.
+    /// Overrides position and file size labels with progress info.
+    /// </summary>
+    public void ShowLoadingProgress(long scannedBytes, long totalBytes)
+    {
+        int percent = totalBytes > 0 ? (int)(scannedBytes * 100 / totalBytes) : 0;
+        _positionLabel.Text = $"Loading {percent}%...";
+        _fileSizeLabel.Text = $"{FormatFileSize(scannedBytes)} / {FormatFileSize(totalBytes)}";
+        _readOnlyLabel.Text = string.Empty; // suppress "R/O" — the loading label is enough
     }
 
     /// <summary>
@@ -433,7 +450,7 @@ public sealed class StatusBarManager
         };
     }
 
-    private static string FormatFileSize(long bytes)
+    internal static string FormatFileSize(long bytes)
     {
         const long KB = 1024;
         const long MB = KB * 1024;

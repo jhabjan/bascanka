@@ -71,6 +71,7 @@
     "MenuFullScreen": "&Цео екран",
     "MenuSymbolList": "Листа &симбола",
     "MenuFindResults": "Резултати &претраживања",
+    "MenuFolding": "С&авијање",
     "MenuToggleFold": "Преклопи &савијање",
     "MenuFoldAll": "Савиј св&е",
     "MenuUnfoldAll": "&Рашири све",
@@ -90,6 +91,7 @@
     "DiffNoDifferences": "Датотеке су идентичне.",
     "CompareSelectFirstFile": "Изаберите прву датотеку за поређење",
     "CompareSelectSecondFile": "Изаберите другу датотеку за поређење",
+    "MenuOpenAppData": "Отвори фасциклу &података апликације",
     "MenuSettings": "П&одешавања...",
 
     "MenuPlugins": "Д&одаци",
@@ -125,11 +127,20 @@
 
     "CommandPaletteNotYetImplemented": "Палета команди биће доступна у будућој верзији.",
 
+    "SavingProgressFormat": "Чување\u2026 {0} / {1}",
+    "ReloadingAfterSave": "Поновно учитавање датотеке\u2026",
+    "ReloadingProgressFormat": "Поновно учитавање\u2026 {0} / {1}",
+
     "ZoomLevelFormat": "Зум: {0}%",
 
     "SettingsTitle": "Подешавања",
-    "SettingsExplorerContextMenu": "Региструј \"Edit with Bascanka\" у контекстни мени Windows Explorer-а",
+    "ContextMenuEditWith": "Уреди помоћу Bascanke",
+    "SettingsExplorerContextMenu": "Региструј \"Edit with Bascanka\" у стари контекстни мени Windows Explorer-а",
     "SettingsExplorerContextMenuDesc": "Додаје опцију десног клика за отварање датотека са Bascankom у Windows Explorer-у.",
+    "SettingsNewExplorerContextMenu": "Региструј \"Edit with Bascanka\" у модерни контекстни мени Windows Explorer-а (захтева поновно покретање Explorer-а)",
+    "SettingsNewExplorerContextMenuDesc": "Приказује \"Edit with Bascanka\" у новом контекстном менију Explorer-а без клика на \"Прикажи више опција\".",
+    "SettingsNewExplorerContextMenuError": "Регистрација новог контекстног менија Explorer-а није успела: {0}",
+    "SettingsNewExplorerRestartExplorer": "Windows Explorer мора да се поново покрене да би промена ступила на снагу. Поново покренути сада?",
 
     "SettingsCategoryEditor": "Уређивач",
     "SettingsCategoryDisplay": "Приказ",
@@ -179,8 +190,14 @@
     "SettingsTabHeightUnit": "px",
     "SettingsMinTabWidth": "Мин. ширина картице",
     "SettingsMinTabWidthUnit": "px",
+    "SettingsMenuItemPadding": "Размак ставки менија",
+    "SettingsMenuItemPaddingUnit": "px",
+    "SettingsTerminalPadding": "Размак терминала",
+    "SettingsTerminalPaddingUnit": "px",
     "SettingsSearchDebounce": "Одлагање претраживања",
     "SettingsSearchDebounceUnit": "ms",
+    "SettingsAutoSaveInterval": "Интервал аутоматског чувања",
+    "SettingsAutoSaveIntervalUnit": "s",
 
     "SettingsCategoryAppearance": "Изглед",
 
@@ -194,6 +211,8 @@
     "SettingsThemeDesc": "Укупна шема боја за интерфејс уређивача.",
     "SettingsUILanguage": "Језик интерфејса",
     "SettingsUILanguageDesc": "Језик који се користи за меније, дијалоге и ознаке.",
+    "SettingsRecentFilesSeparated": "Раздвојене недавне датотеке",
+    "SettingsRecentFilesSeparatedDesc": "Приказ недавних датотека са фасциклом и именом у одвојеним колонама.",
 
     "SettingsCaretBlinkRateDesc": "Интервал у милисекундама између трептања курсора.",
     "SettingsTextLeftPaddingDesc": "Хоризонтални размак између жлеба и првог знака.",
@@ -208,12 +227,15 @@
     "SettingsTabHeightDesc": "Висина траке картица у пикселима.",
     "SettingsMaxTabWidthDesc": "Максимална ширина једне картице у пикселима.",
     "SettingsMinTabWidthDesc": "Минимална ширина једне картице у пикселима.",
+    "SettingsMenuItemPaddingDesc": "Вертикални размак ставки менија у пикселима.",
+    "SettingsTerminalPaddingDesc": "Унутрашњи размак терминала у пикселима.",
 
     "SettingsLargeFileThresholdDesc": "Датотеке изнад ове величине користе меморијско мапирање за перформансе.",
     "SettingsFoldingMaxFileSizeDesc": "Савијање кода онемогућено је за датотеке веће од овог.",
     "SettingsMaxRecentFilesDesc": "Максималан број уноса у листи недавних датотека.",
     "SettingsSearchHistoryLimitDesc": "Максималан број сачуваних појмова претраживања.",
     "SettingsSearchDebounceDesc": "Одлагање пре покретања претраживања уживо након куцања.",
+    "SettingsAutoSaveIntervalDesc": "Колико често се несачуване измене сигурносно копирају за опоравак.",
 
     "SettingsColorCustomization": "Прилагођавање боја",
     "SettingsColorReset": "Врати",
@@ -325,6 +347,14 @@
     "CustomHighlightNewProfile": "Нови профил",
     "CustomHighlightEndPattern": "Завршни узорак",
     "CustomHighlightFoldable": "Савијање",
-    "CustomHighlightScopeBlock": "блок"
+    "CustomHighlightScopeBlock": "блок",
+    "CustomHighlightExport": "Извези...",
+    "CustomHighlightImport": "Увези...",
+    "CustomHighlightExportSuccess": "Профили успешно извезени.",
+    "CustomHighlightExportEmpty": "Нема профила за извоз.",
+    "CustomHighlightImportSuccess": "{0} профил(а) успешно увезено.",
+    "CustomHighlightImportError": "Изабрана датотека не садржи ваљане профиле истицања.",
+    "CustomHighlightPickColor": "Одабери боју...",
+    "CustomHighlightClearColor": "Уклони боју"
   }
 }

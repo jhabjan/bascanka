@@ -35,13 +35,16 @@ static class Program
         // Parse command-line arguments: each argument is treated as a file path to open.
         string[] filesToOpen = ParseCommandLineArgs(args);
 
-        // Single-instance: if files were passed and an existing instance is running,
-        // send the files to it and exit. No-args launches always start a new instance.
-        if (filesToOpen.Length > 0 && SingleInstanceManager.TrySendFiles(filesToOpen))
+        // Single-instance: only one Bascanka process may run at a time.
+        var singleInstance = new SingleInstanceManager();
+        if (!singleInstance.TryAcquire())
+        {
+            // Another instance is running — forward files (or just activate it) and exit.
+            SingleInstanceManager.TrySignalExisting(filesToOpen);
             return;
+        }
 
         // Create and run the main form.
-        var singleInstance = new SingleInstanceManager();
         using var mainForm = new MainForm(filesToOpen, singleInstance);
         Application.Run(mainForm);
     }
@@ -64,7 +67,12 @@ static class Program
             if (string.Equals(arg, "-r", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(arg, "--reset", StringComparison.OrdinalIgnoreCase))
             {
+                SettingsManager.ResetToDefaults();
                 SettingsManager.ClearSessionState();
+                // Delete recent files list.
+                string recentPath = Path.Combine(
+                    SettingsManager.AppDataFolder, "recent.json");
+                try { if (File.Exists(recentPath)) File.Delete(recentPath); } catch { }
                 continue;
             }
 

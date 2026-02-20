@@ -1,7 +1,9 @@
 <Solution>
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />
+    <File Path="contributors.txt" />
     <File Path="README.md" />
+    <File Path="release_notes.txt" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Bascanka.App/Bascanka.App.csproj" />

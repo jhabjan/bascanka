@@ -91,6 +91,9 @@ public class TabStrip : Control
     /// </summary>
     public event EventHandler<TabContextMenuOpeningEventArgs>? TabContextMenuOpening;
 
+    /// <summary>Raised when the user double-clicks the empty area of the tab strip.</summary>
+    public event EventHandler? NewTabRequested;
+
     // ── Construction ──────────────────────────────────────────────────
 
     public TabStrip()
@@ -149,12 +152,16 @@ public class TabStrip : Control
     /// The theme used for rendering.  When set, the control is invalidated
     /// so that the new colours take effect immediately.
     /// </summary>
+    public Func<ITheme, ToolStripRenderer>? ContextMenuRenderer { get; set; }
+
     public ITheme? Theme
     {
         get => _theme;
         set
         {
             _theme = value;
+            if (value is not null && ContextMenuRenderer is not null)
+                _contextMenu.Renderer = ContextMenuRenderer(value);
             Invalidate();
         }
     }
@@ -567,6 +574,13 @@ public class TabStrip : Control
             Cursor = Cursors.Default;
             Invalidate();
         }
+    }
+
+    protected override void OnMouseDoubleClick(MouseEventArgs e)
+    {
+        base.OnMouseDoubleClick(e);
+        if (e.Button == MouseButtons.Left && HitTestTab(e.Location) < 0)
+            NewTabRequested?.Invoke(this, EventArgs.Empty);
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)

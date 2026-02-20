@@ -12,7 +12,7 @@ namespace Bascanka.App;
 public sealed class CustomHighlightStore
 {
     private static readonly string FilePath =
-        Path.Combine(AppContext.BaseDirectory, "Bascanka.json");
+        Path.Combine(SettingsManager.AppDataFolder, "custom-highlighting.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -70,6 +70,8 @@ public sealed class CustomHighlightStore
     /// <summary>Saves all profiles to Bascanka.json (atomic write).</summary>
     public void Save()
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+
         var root = new RootDto
         {
             CustomHighlighting = _profiles.Select(p => new ProfileDto
@@ -115,6 +117,75 @@ public sealed class CustomHighlightStore
     {
         return _profiles.FirstOrDefault(p =>
             string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Exports the given profiles to a JSON string (same format as the config file).</summary>
+    public static string ExportToJson(IEnumerable<CustomHighlightProfile> profiles)
+    {
+        var root = new RootDto
+        {
+            CustomHighlighting = profiles.Select(p => new ProfileDto
+            {
+                Name = p.Name,
+                Rules = p.Rules.Select(r =>
+                {
+                    bool isBlock = string.Equals(r.Scope, "block", StringComparison.OrdinalIgnoreCase);
+                    return new RuleDto
+                    {
+                        Pattern = isBlock ? null : r.Pattern,
+                        Scope = r.Scope,
+                        Foreground = FormatColor(r.Foreground),
+                        Background = FormatColor(r.Background),
+                        Begin = isBlock ? r.BeginPattern : null,
+                        End = isBlock ? r.EndPattern : null,
+                        Foldable = isBlock && r.Foldable ? true : null,
+                    };
+                }).ToList(),
+            }).ToList(),
+        };
+
+        string json = JsonSerializer.Serialize(root, JsonOptions);
+        if (json.Contains('\r'))
+            json = json.Replace("\r\n", "\n").Replace("\r", "\n");
+        return json;
+    }
+
+    /// <summary>Imports profiles from a JSON string. Returns null on parse failure.</summary>
+    public static List<CustomHighlightProfile>? ImportFromJson(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<RootDto>(json, JsonOptions);
+            if (root?.CustomHighlighting is null) return null;
+
+            var profiles = new List<CustomHighlightProfile>();
+            foreach (var dto in root.CustomHighlighting)
+            {
+                var profile = new CustomHighlightProfile { Name = dto.Name ?? string.Empty };
+                if (dto.Rules is not null)
+                {
+                    foreach (var ruleDto in dto.Rules)
+                    {
+                        profile.Rules.Add(new CustomHighlightRule
+                        {
+                            Pattern = ruleDto.Pattern ?? string.Empty,
+                            Scope = ruleDto.Scope ?? "match",
+                            Foreground = ParseColor(ruleDto.Foreground),
+                            Background = ParseColor(ruleDto.Background),
+                            BeginPattern = ruleDto.Begin ?? string.Empty,
+                            EndPattern = ruleDto.End ?? string.Empty,
+                            Foldable = ruleDto.Foldable ?? false,
+                        });
+                    }
+                }
+                profiles.Add(profile);
+            }
+            return profiles;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ── Color helpers ──────────────────────────────────────────────────
