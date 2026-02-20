@@ -40,10 +40,11 @@
     <EmbeddedResource Include="Resources\lang_hr.json" />
     <EmbeddedResource Include="Resources\lang_sr.json" />
     <EmbeddedResource Include="Resources\lang_zh.json" />
+    <EmbeddedResource Include="Resources\lang_ru.json" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Bascanka.Core\Bascanka.Core.csproj" />
     <ProjectReference Include="..\Bascanka.Editor\Bascanka.Editor.csproj" />
     <ProjectReference Include="..\Bascanka.Plugins.Api\Bascanka.Plugins.Api.csproj" />
-  </ItemGroup>
+  </ItemGroup>  
 </Project>
