@@ -2,12 +2,14 @@
 --------------------------
 - fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
 - fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.
-- fixed word wrap cursor mavigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
+- fixed word wrap cursor navigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
 - fixed a bug where custom highlighting profiles assigned via Language > Custom Highlighting were not restored when reopening the application.
 - word wrap is now saved per tab, so each document remembers its own setting across restarts and crashes, with new documents defaulting to the last-used state.
 - open recent files menu now displays recent files in a cleaner two-column format.
 - added move up and move down buttons for reordering custom highlighting profiles.
 - fixed CJK (Chinese, Japanese, Korean) characters overlapping in the embedded terminal by correctly treating fullwidth characters as double-width cells.
+- languages menu is now sorted ascending.
+- fixed the Go To Line dialog so buttons are no longer clipped outside the window and the dialog now respects the active editor theme.
 
 v.1.0.3.		2025-02-18
 --------------------------

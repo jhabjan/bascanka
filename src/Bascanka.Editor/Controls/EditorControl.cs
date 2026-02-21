@@ -1058,31 +1058,9 @@ public sealed class EditorControl : UserControl
     /// <summary>Shows the Go to Line dialog.</summary>
     public void ShowGoToLineDialog()
     {
-        using var dialog = new Form
-        {
-            Text = "Go to Line",
-            Size = new Size(300, 130),
-            StartPosition = FormStartPosition.CenterParent,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
-            MinimizeBox = false,
-        };
-
-        var label = new Label { Text = $"Line number (1 - {TotalLines}):", Left = 12, Top = 12, Width = 260 };
-        var textBox = new TextBox { Left = 12, Top = 36, Width = 260, Text = (CurrentLine + 1).ToString() };
-        var btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 116, Top = 66, Width = 75 };
-        var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 197, Top = 66, Width = 75 };
-
-        dialog.Controls.AddRange([label, textBox, btnOk, btnCancel]);
-        dialog.AcceptButton = btnOk;
-        dialog.CancelButton = btnCancel;
-        textBox.SelectAll();
-
-        if (dialog.ShowDialog(FindForm()) == DialogResult.OK &&
-            long.TryParse(textBox.Text, out long lineNum))
-        {
-            GoToLine(lineNum - 1);
-        }
+        long? lineNum = Dialogs.GoToLineDialog.Show(FindForm(), TotalLines, CurrentLine + 1);
+        if (lineNum.HasValue)
+            GoToLine(lineNum.Value - 1);
     }
 
     /// <summary>Increases the font size.</summary>
