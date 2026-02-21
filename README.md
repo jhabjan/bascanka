@@ -14,12 +14,10 @@ Bascanka focuses on efficient resource usage and fast text processing while main
 
 ## Downloads
 
-### 📦 Bascanka v.1.0.3
+### 📦 Bascanka v.1.0.4
 
 #### Release notes
 
-v.1.0.4.		2025-02-21
---------------------------
 - fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
 - fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.
 - fixed word wrap cursor navigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
