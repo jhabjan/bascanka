@@ -14,7 +14,7 @@ Bascanka focuses on efficient resource usage and fast text processing while main
 
 ## Downloads
 
-### 📦 Bascanka v.1.0.4
+### 📦 Bascanka v.1.0.4 (2026-02-21)
 
 #### Release notes
 
