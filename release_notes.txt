@@ -1,4 +1,4 @@
-﻿v.1.0.4.		????-??-??
+﻿v.1.0.4.		2026-02-21
 --------------------------
 - fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
 - fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.
