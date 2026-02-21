@@ -43,7 +43,7 @@ Bascanka focuses on efficient resource usage and fast text processing while main
 
 All builds are portable - no installation required.
 
-v.1.0.3.		2025-02-18
+v.1.0.3.		2026-02-18
 --------------------------
 - implemented embedded terminal (cmd.exe) to the bottom panel using the Windows ConPTY API.
 - added close/crash unsaved changes recovery with periodic automatic back-ups to "%AppData%\Bascanka\recovery" - small/untitled files are backed up in full size as UTF-8, while large memory-mapped files use efficient binary delta/changes-only save format.
