@@ -39,6 +39,9 @@ public sealed class EditorSurface : Control
     private Font? _emojiFallbackFont; // Segoe UI Emoji for keycap sequences (GDI can't combine them with monospace fonts)
     private int _lineHeight;
 
+    // Cached total wrap rows to avoid O(document) recomputation on every scroll.
+    private long _totalWrapRowsCache = -1;
+
     // References to collaborating managers.
     private CaretManager? _caret;
     private SelectionManager? _selection;
@@ -87,6 +90,7 @@ public sealed class EditorSurface : Control
         set
         {
             _document = value;
+            _totalWrapRowsCache = -1;
             Invalidate();
         }
     }
@@ -99,6 +103,7 @@ public sealed class EditorSurface : Control
         {
             _editorFont = value ?? throw new ArgumentNullException(nameof(value));
             RecalcFontMetrics();
+            _totalWrapRowsCache = -1;
             Invalidate();
         }
     }
@@ -110,6 +115,7 @@ public sealed class EditorSurface : Control
         set
         {
             _tabSize = Math.Max(1, value);
+            _totalWrapRowsCache = -1;
             Invalidate();
         }
     }
@@ -133,6 +139,7 @@ public sealed class EditorSurface : Control
         set
         {
             _wordWrap = value;
+            _totalWrapRowsCache = -1;
             Invalidate();
         }
     }
@@ -149,35 +156,48 @@ public sealed class EditorSurface : Control
     }
 
     /// <summary>
-    /// The maximum number of expanded columns that fit in the viewport.
+    /// The maximum pixel width available for text in a wrap row.
     /// Used by word wrap to determine where to break lines.
+    /// </summary>
+    internal int WrapPixelWidth => Math.Max(20 * _charWidth, ClientSize.Width - TextLeftPadding);
+
+    /// <summary>
+    /// The maximum number of expanded columns that fit in the viewport.
+    /// Kept for backward compatibility with column-selection in word-wrap mode.
     /// </summary>
     internal int WrapColumns => _charWidth > 0 ? Math.Max(20, (ClientSize.Width - TextLeftPadding) / _charWidth) : 80;
 
     /// <summary>
     /// Returns the number of visual rows a document line occupies when word wrap is enabled.
+    /// Uses pixel-based calculation for accurate CJK handling.
     /// </summary>
     internal int GetWrapRowCount(long docLine)
     {
         if (!_wordWrap || _document is null || docLine >= _document.LineCount)
             return 1;
-        int wrapCols = WrapColumns;
+        int wrapPx = WrapPixelWidth;
+        int maxCPx = MaxCharPixelWidth;
 
-        // Fast path: use character count directly for long lines.
-        // Avoids fetching the full line text and calling ExpandTabs.
-        // Exact for tab-free text (JSON, most long lines); may undercount
-        // slightly for lines with many tabs, which is acceptable.
+        // Fast path: even if every char uses the widest glyph, it still fits.
         long len = _document.GetLineLength(docLine);
-        if (len > wrapCols * 4)
-            return Math.Max(1, (int)((len + wrapCols - 1) / wrapCols));
+        if (len * maxCPx <= wrapPx)
+            return 1;
 
         string lineText = _document.GetLine(docLine);
         string expanded = ExpandTabs(lineText);
-        return Math.Max(1, (expanded.Length + wrapCols - 1) / wrapCols);
+        return Math.Max(1, CountWrapRowsPixel(expanded, wrapPx));
     }
 
     /// <summary>Width of a single character cell in pixels.</summary>
     public int CharWidth => _charWidth;
+
+    /// <summary>Width of a CJK character in pixels (measured from font fallback).</summary>
+    public int CjkCharWidth => _cjkCharWidth;
+
+    /// <summary>Pixel width of the widest character across all measured categories.</summary>
+    internal int MaxCharPixelWidth => Math.Max(_charWidth,
+        Math.Max(_cjkCharWidth, Math.Max(_suppCjkCharWidth,
+        Math.Max(_bmpEmojiCharWidth, _suppEmojiCharWidth))));
 
     /// <summary>Height of a single line in pixels.</summary>
     public int LineHeight => _lineHeight;
@@ -240,19 +260,22 @@ public sealed class EditorSurface : Control
             return _folding is not null ? _folding.GetVisibleLineCount(lineCount) : lineCount;
         }
 
+        if (_totalWrapRowsCache >= 0)
+            return _totalWrapRowsCache;
+
         long total = 0;
         long docLines = _document.LineCount;
-        int wrapCols = WrapColumns;
+        int wrapPx = WrapPixelWidth;
+        int maxCPx = MaxCharPixelWidth;
 
         for (long line = 0; line < docLines; line++)
         {
             if (_folding is not null && !_folding.IsLineVisible(line))
                 continue;
 
-            // Fast path: use line length to check if wrapping is needed.
-            // GetLineLength is O(1) with cached offsets; avoids string allocation.
+            // Fast path: even if every char uses the widest glyph, it still fits.
             long len = _document.GetLineLength(line);
-            if (len <= wrapCols)
+            if (len * maxCPx <= wrapPx)
             {
                 total += 1;
             }
@@ -262,7 +285,14 @@ public sealed class EditorSurface : Control
             }
         }
 
-        return Math.Max(1, total);
+        _totalWrapRowsCache = Math.Max(1, total);
+        return _totalWrapRowsCache;
+    }
+
+    /// <summary>Invalidates the cached total wrap row count, forcing recomputation on next access.</summary>
+    internal void InvalidateWrapRowCache()
+    {
+        _totalWrapRowsCache = -1;
     }
 
     /// <summary>
@@ -273,7 +303,8 @@ public sealed class EditorSurface : Control
         if (_document is null) return (0, 0);
 
         long docLines = _document.LineCount;
-        int wrapCols = WrapColumns;
+        int wrapPx = WrapPixelWidth;
+        int maxCPx = MaxCharPixelWidth;
         long accumulated = 0;
 
         for (long line = 0; line < docLines; line++)
@@ -282,7 +313,7 @@ public sealed class EditorSurface : Control
                 continue;
 
             long len = _document.GetLineLength(line);
-            int rows = len <= wrapCols ? 1 : GetWrapRowCount(line);
+            int rows = len * maxCPx <= wrapPx ? 1 : GetWrapRowCount(line);
 
             if (accumulated + rows > wrapRow)
                 return (line, (int)(wrapRow - accumulated));
@@ -301,7 +332,8 @@ public sealed class EditorSurface : Control
         if (_document is null) return 0;
 
         long docLines = _document.LineCount;
-        int wrapCols = WrapColumns;
+        int wrapPx = WrapPixelWidth;
+        int maxCPx = MaxCharPixelWidth;
         long accumulated = 0;
 
         for (long line = 0; line < docLines; line++)
@@ -313,7 +345,7 @@ public sealed class EditorSurface : Control
                 return accumulated + wrapRowOffset;
 
             long len = _document.GetLineLength(line);
-            accumulated += len <= wrapCols ? 1 : GetWrapRowCount(line);
+            accumulated += len * maxCPx <= wrapPx ? 1 : GetWrapRowCount(line);
         }
 
         return accumulated;
@@ -380,7 +412,7 @@ public sealed class EditorSurface : Control
         if (_document is null || _lineHeight == 0) return;
 
         long firstVisible = _scroll?.FirstVisibleLine ?? 0;
-        int hOffset = _wordWrap ? 0 : (_scroll?.HorizontalScrollOffset ?? 0);
+        int hPixelOffset = _wordWrap ? 0 : (_scroll?.HorizontalScrollOffset ?? 0);
         int visibleCount = VisibleLineCount + 1; // +1 for partial lines
 
         long totalDocLines = _document.LineCount;
@@ -401,7 +433,8 @@ public sealed class EditorSurface : Control
 
             // Collect document lines that contribute wrap rows to the visible area.
             int wrapRowsBudget = visibleCount;
-            int wrapCols0 = WrapColumns;
+            int wrapPx0 = WrapPixelWidth;
+            int maxCPx0 = MaxCharPixelWidth;
             for (long dl = startDocLine; dl < totalDocLines && wrapRowsBudget > 0; dl++)
             {
                 if (_folding is not null && !_folding.IsLineVisible(dl))
@@ -413,8 +446,8 @@ public sealed class EditorSurface : Control
 
                 // Use GetLineLength for O(1) row count (avoids fetching full line text).
                 long lineLen = _document.GetLineLength(dl);
-                int rows = lineLen <= wrapCols0 ? 1
-                    : Math.Max(1, (int)((lineLen + wrapCols0 - 1) / wrapCols0));
+                int rows = lineLen * maxCPx0 <= wrapPx0 ? 1
+                    : GetWrapRowCount(dl);
                 // For the first line, only remaining rows after the offset count.
                 int usedRows = (dl == startDocLine) ? rows - wrapOff : rows;
                 wrapRowsBudget -= usedRows;
@@ -440,7 +473,7 @@ public sealed class EditorSurface : Control
 
         if (entryCount == 0)
         {
-            RenderCaret(g, firstVisible, hOffset);
+            RenderCaret(g, firstVisible, hPixelOffset);
             return;
         }
 
@@ -465,13 +498,16 @@ public sealed class EditorSurface : Control
 
             if (_wordWrap)
             {
-                int wrapCols = WrapColumns;
+                int wrapPx = WrapPixelWidth;
+                int wrapCols = WrapColumns; // kept for column-selection visual column math
                 // Determine which wrap row to start rendering from within this line.
                 int startRow = (i == 0) ? firstLineWrapOffset : 0;
 
                 // For very long lines, window the text around the visible area
                 // to avoid ExpandTabs / rendering on millions of characters.
-                int charsPerScreen = (VisibleLineCount + 4) * wrapCols;
+                int charsPerScreen = _charWidth > 0
+                    ? (VisibleLineCount + 4) * (wrapPx / _charWidth)
+                    : (VisibleLineCount + 4) * 80;
                 string wrapText;
                 int charClipStart = 0;
                 int expandedClipStart = 0;
@@ -479,8 +515,8 @@ public sealed class EditorSurface : Control
                 if (lineText.Length > charsPerScreen * 2)
                 {
                     // Approximate character position for startRow.
-                    // For tab-free text (typical JSON) this is exact.
-                    charClipStart = Math.Min(startRow * wrapCols, lineText.Length);
+                    int charsPerRow = _charWidth > 0 ? wrapPx / _charWidth : 80;
+                    charClipStart = Math.Min(startRow * charsPerRow, lineText.Length);
                     int charClipEnd = Math.Min(charClipStart + charsPerScreen, lineText.Length);
                     wrapText = lineText.Substring(charClipStart, charClipEnd - charClipStart);
                     expandedClipStart = startRow * wrapCols;
@@ -492,7 +528,8 @@ public sealed class EditorSurface : Control
                 }
 
                 string expanded = ExpandTabs(wrapText);
-                int rowsForClip = Math.Max(1, (expanded.Length + wrapCols - 1) / wrapCols);
+                var wrapSegments = GetWrapSegmentsPixel(expanded, wrapPx);
+                int rowsForClip = wrapSegments.Length;
                 List<Token>? tokens = _tokenCache?.GetCachedTokens(docLine);
 
                 // Filter and shift tokens into the clipped window.
@@ -542,8 +579,8 @@ public sealed class EditorSurface : Control
                     int y = visualRow * _lineHeight;
                     if (y > ClientSize.Height) break;
 
-                    int segStart = row * wrapCols;
-                    int segLen = Math.Min(wrapCols, expanded.Length - segStart);
+                    int segStart = wrapSegments[row].Start;
+                    int segLen = wrapSegments[row].Length;
 
                     // Block background (lowest priority — painted first per row).
                     if (wrapBlock.HasValue && wrapBlock.Value.Background != Color.Empty)
@@ -579,8 +616,11 @@ public sealed class EditorSurface : Control
                         segStart, origSegStart, origSegLen, y, selBrush);
 
                     // Column selection for this wrap segment.
-                    RenderColumnSelectionBackgroundWrap(g, docLine,
-                        origSegStart, segLen, y, selBrush);
+                    // Convert char-index segment bounds to visual columns for intersection.
+                    int segVisColStart = CharIndexToVisualColumn(expanded, segStart) + expandedClipStart;
+                    int segVisColEnd = CharIndexToVisualColumn(expanded, segStart + segLen) + expandedClipStart;
+                    RenderColumnSelectionBackgroundWrap(g, docLine, expanded, segStart,
+                        segVisColStart, segVisColEnd, y, selBrush);
 
                     // Text rendering.
                     if (segLen > 0)
@@ -609,26 +649,33 @@ public sealed class EditorSurface : Control
             {
                 int y = visualRow * _lineHeight;
 
-                // For extremely long lines, extract a window around the
-                // visible columns instead of processing millions of chars.
-                // All rendering methods use ExpandedColumn which, for
-                // tab-free text (typical for long lines), equals the char
-                // index. Using renderHOffset = hOffset - clipStart makes
-                // all position math work transparently.
+                // Convert pixel scroll offset to character index for this line.
+                // Rendering methods use hOffset as a character index into the
+                // tab-expanded text; the pixel-to-char conversion happens here.
                 string renderText = lineText;
                 int clipStart = 0;
-                int renderHOffset = hOffset;
                 long renderLineStart = lineStartOffset;
                 int visibleWindow = MaxVisibleColumns + 500;
 
+                // For very long lines, estimate char position from pixel offset
+                // and clip a window around it.
                 if (lineText.Length > visibleWindow * 2)
                 {
-                    clipStart = Math.Clamp(hOffset - 200, 0, lineText.Length);
-                    int clipEnd = Math.Clamp(hOffset + visibleWindow, clipStart, lineText.Length);
+                    // Conservative char estimate from pixel offset.
+                    int charEstimate = _charWidth > 0 ? hPixelOffset / _charWidth : 0;
+                    clipStart = Math.Clamp(charEstimate - 200, 0, lineText.Length);
+                    int clipEnd = Math.Clamp(charEstimate + visibleWindow, clipStart, lineText.Length);
                     renderText = lineText.Substring(clipStart, clipEnd - clipStart);
-                    renderHOffset = hOffset - clipStart;
                     renderLineStart = lineStartOffset + clipStart;
                 }
+
+                // Convert pixel offset to char index within renderText.
+                string renderExpanded = ExpandTabs(renderText);
+                int pixelAtClipStart = (clipStart > 0 && lineText.Length <= visibleWindow * 4)
+                    ? DisplayX(ExpandTabs(lineText), 0, clipStart)
+                    : clipStart * _charWidth; // approximate for very long lines
+                int localPixelOffset = Math.Max(0, hPixelOffset - pixelAtClipStart);
+                int renderHOffset = PixelToCharIndex(renderExpanded, localPixelOffset);
 
                 // Block background (lowest priority — painted first).
                 Color blockFg = Color.Empty;
@@ -731,7 +778,8 @@ public sealed class EditorSurface : Control
                 {
                     // Use original line length for fold ellipsis position.
                     string expandedFold = ExpandTabs(lineText);
-                    int textEndX = DisplayX(expandedFold, hOffset, expandedFold.Length) + TextLeftPadding;
+                    int foldHChar = PixelToCharIndex(expandedFold, hPixelOffset);
+                    int textEndX = DisplayX(expandedFold, foldHChar, expandedFold.Length) + TextLeftPadding;
                     string indicator = " ... ";
                     using var bgBrush = new SolidBrush(Color.FromArgb(EditorControl.DefaultFoldIndicatorOpacity, 128, 128, 128));
                     int indicatorWidth = indicator.Length * _charWidth;
@@ -748,7 +796,7 @@ public sealed class EditorSurface : Control
         if (_wordWrap)
             RenderCaretWrapped(g, firstVisible, firstLineWrapOffset, lineData, minDocLine, docLines, entryCount);
         else
-            RenderCaret(g, firstVisible, hOffset);
+            RenderCaret(g, firstVisible, hPixelOffset);
     }
 
     private void RenderPlainLine(Graphics g, string lineText, int y, int hOffset)
@@ -1034,24 +1082,24 @@ public sealed class EditorSurface : Control
     }
 
     private void RenderColumnSelectionBackgroundWrap(Graphics g,
-        long docLine, int segStartExpanded, int segLen, int y, Brush selBrush)
+        long docLine, string expanded, int segStartCharIdx,
+        int segVisColStart, int segVisColEnd, int y, Brush selBrush)
     {
         if (_selection is null || !_selection.HasColumnSelection) return;
         if (docLine < _selection.ColumnStartLine || docLine > _selection.ColumnEndLine) return;
 
-        // Column selection stores *absolute* expanded columns from line start.
-        // The wrap segment covers absolute columns [segStartExpanded, segStartExpanded + segLen).
-        // Intersect the selection range with the segment range.
+        // Column selection stores *absolute* visual columns from line start.
+        // The wrap segment covers visual columns [segVisColStart, segVisColEnd).
         int leftVisCol = (int)_selection.ColumnLeftCol;
         int rightVisCol = (int)_selection.ColumnRightCol;
 
-        int selLeft = Math.Max(leftVisCol, segStartExpanded);
-        int selRight = Math.Min(rightVisCol, segStartExpanded + segLen);
+        int selLeft = Math.Max(leftVisCol, segVisColStart);
+        int selRight = Math.Min(rightVisCol, segVisColEnd);
         if (selRight <= selLeft) return;
 
-        // Convert absolute columns to pixel positions relative to the segment start.
-        int x1 = (selLeft - segStartExpanded) * _charWidth + TextLeftPadding;
-        int x2 = (selRight - segStartExpanded) * _charWidth + TextLeftPadding;
+        // Convert visual columns to pixel positions using uniform _charWidth grid.
+        int x1 = (selLeft - segVisColStart) * _charWidth + TextLeftPadding;
+        int x2 = (selRight - segVisColStart) * _charWidth + TextLeftPadding;
         g.FillRectangle(selBrush, x1, y, x2 - x1, _lineHeight);
     }
 
@@ -1114,7 +1162,7 @@ public sealed class EditorSurface : Control
         }
     }
 
-    private void RenderCaret(Graphics g, long firstVisibleLine, int hOffset)
+    private void RenderCaret(Graphics g, long firstVisibleLine, int hPixelOffset)
     {
         if (_caret is null || !_caret.IsVisible) return;
 
@@ -1139,13 +1187,178 @@ public sealed class EditorSurface : Control
             : string.Empty;
 
         string expanded = ExpandTabs(lineText);
+        int hCharOffset = PixelToCharIndex(expanded, hPixelOffset);
         int expandedCol = ExpandedColumn(lineText, (int)Math.Min(caretCol, lineText.Length));
-        int x = DisplayX(expanded, hOffset, expandedCol) + TextLeftPadding;
+        int x = DisplayX(expanded, hCharOffset, expandedCol) + TextLeftPadding;
 
         if (x < 0 || x > ClientSize.Width) return;
 
         using var caretPen = new Pen(_theme.CaretColor, 2);
         g.DrawLine(caretPen, x, y, x, y + _lineHeight);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Pixel-based wrap helpers (CJK-aware)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Counts how many wrap rows a tab-expanded line needs using actual
+    /// pixel widths for accurate CJK/emoji handling.
+    /// </summary>
+    private int CountWrapRowsPixel(string expanded, int maxPixelWidth)
+    {
+        if (expanded.Length == 0 || maxPixelWidth <= 0) return 1;
+        int rows = 1;
+        int px = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            int cpx = CharPixelWidth(expanded, i, w);
+            if (px + cpx > maxPixelWidth)
+            {
+                rows++;
+                px = cpx;
+            }
+            else
+            {
+                px += cpx;
+            }
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Returns the character-index ranges (start, length) for each wrap row,
+    /// splitting when pixel width reaches the limit.
+    /// </summary>
+    private (int Start, int Length)[] GetWrapSegmentsPixel(string expanded, int maxPixelWidth)
+    {
+        if (expanded.Length == 0 || maxPixelWidth <= 0)
+            return [(0, expanded.Length)];
+
+        var segments = new List<(int Start, int Length)>();
+        int rowStart = 0;
+        int px = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            int cpx = CharPixelWidth(expanded, i, w);
+            if (px + cpx > maxPixelWidth)
+            {
+                segments.Add((rowStart, i - rowStart));
+                rowStart = i;
+                px = cpx;
+            }
+            else
+            {
+                px += cpx;
+            }
+        }
+        segments.Add((rowStart, expanded.Length - rowStart));
+        return segments.ToArray();
+    }
+
+    /// <summary>
+    /// Returns the char index where the Nth wrap row starts using pixel widths.
+    /// Optimized for hit testing — stops early once the target row is reached.
+    /// </summary>
+    private int GetWrapSegmentStartPixel(string expanded, int maxPixelWidth, int targetRow)
+    {
+        if (targetRow <= 0 || expanded.Length == 0 || maxPixelWidth <= 0) return 0;
+        int row = 0;
+        int px = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            int cpx = CharPixelWidth(expanded, i, w);
+            if (px + cpx > maxPixelWidth)
+            {
+                row++;
+                if (row == targetRow) return i;
+                px = cpx;
+            }
+            else
+            {
+                px += cpx;
+            }
+        }
+        return expanded.Length;
+    }
+
+    // Keep the visual-column versions for backward compat with column selection.
+    private static int CountVisualWrapRows(string expanded, int maxVisualCols)
+    {
+        if (expanded.Length == 0 || maxVisualCols <= 0) return 1;
+        int rows = 1;
+        int vc = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            if (vc + w > maxVisualCols)
+            {
+                rows++;
+                vc = w;
+            }
+            else
+            {
+                vc += w;
+            }
+        }
+        return rows;
+    }
+
+    private static (int Start, int Length)[] GetWrapSegments(string expanded, int maxVisualCols)
+    {
+        if (expanded.Length == 0 || maxVisualCols <= 0)
+            return [(0, expanded.Length)];
+
+        var segments = new List<(int Start, int Length)>();
+        int rowStart = 0;
+        int vc = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            if (vc + w > maxVisualCols)
+            {
+                segments.Add((rowStart, i - rowStart));
+                rowStart = i;
+                vc = w;
+            }
+            else
+            {
+                vc += w;
+            }
+        }
+        segments.Add((rowStart, expanded.Length - rowStart));
+        return segments.ToArray();
+    }
+
+    private static int GetWrapSegmentStart(string expanded, int maxVisualCols, int targetRow)
+    {
+        if (targetRow <= 0 || expanded.Length == 0 || maxVisualCols <= 0) return 0;
+        int row = 0;
+        int vc = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            if (vc + w > maxVisualCols)
+            {
+                row++;
+                if (row == targetRow) return i;
+                vc = w;
+            }
+            else
+            {
+                vc += w;
+            }
+        }
+        return expanded.Length;
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -1223,7 +1436,7 @@ public sealed class EditorSurface : Control
 
         long caretLine = _caret.Line;
         long caretCol = _caret.Column;
-        int wrapCols = WrapColumns;
+        int wrapPx = WrapPixelWidth;
 
         // Find the visual row for the caret.
         int visualRow = 0;
@@ -1240,25 +1453,31 @@ public sealed class EditorSurface : Control
             string lineText = lineData[dataIndex].Text;
             int startRow = (i == 0) ? firstLineWrapOffset : 0;
 
-            // For very long lines, compute wrap row from the caret's expanded column
-            // without ExpandTabs on the full line.
-            int expandedLineLen = lineText.Length; // approximate for tab-free text
-            int rowsForLine = Math.Max(1, (expandedLineLen + wrapCols - 1) / wrapCols);
+            string expandedStr = ExpandTabs(lineText);
+            var segments = GetWrapSegmentsPixel(expandedStr, wrapPx);
+            int rowsForLine = segments.Length;
             int renderedRows = rowsForLine - startRow;
 
             if (docLine == caretLine)
             {
                 int expandedCol = ExpandedColumn(lineText, (int)Math.Min(caretCol, lineText.Length));
-                int wrapRow = wrapCols > 0 ? expandedCol / wrapCols : 0;
-                int colInRow = expandedCol - wrapRow * wrapCols;
 
-                // The caret's wrap row relative to the first rendered row.
+                // Find which segment contains the caret.
+                int wrapRow = 0;
+                for (int s = 0; s < segments.Length; s++)
+                {
+                    int segEnd = segments[s].Start + segments[s].Length;
+                    if (expandedCol < segEnd || s == segments.Length - 1)
+                    {
+                        wrapRow = s;
+                        break;
+                    }
+                }
+
                 int caretVisualRow = visualRow + wrapRow - startRow;
-
                 int y = caretVisualRow * _lineHeight;
-                string expandedStr = ExpandTabs(lineText);
-                int rowStart = wrapRow * wrapCols;
-                int x = DisplayX(expandedStr, rowStart, Math.Min(rowStart + colInRow, expandedStr.Length)) + TextLeftPadding;
+                int segStart = segments[wrapRow].Start;
+                int x = DisplayX(expandedStr, segStart, Math.Min(expandedCol, expandedStr.Length)) + TextLeftPadding;
 
                 if (y >= 0 && y <= ClientSize.Height)
                 {
@@ -1421,6 +1640,21 @@ public sealed class EditorSurface : Control
     // ────────────────────────────────────────────────────────────────────
     //  Tab expansion helpers
     // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>Public accessor for ExpandTabs, used by EditorControl for wrap navigation.</summary>
+    internal string ExpandTabsPublic(string text) => ExpandTabs(text);
+
+    /// <summary>Public accessor for GetWrapSegments, used by EditorControl for wrap navigation.</summary>
+    internal static (int Start, int Length)[] GetWrapSegmentsPublic(string expanded, int maxVisualCols)
+        => GetWrapSegments(expanded, maxVisualCols);
+
+    /// <summary>Public accessor for pixel-based GetWrapSegmentsPixel.</summary>
+    internal (int Start, int Length)[] GetWrapSegmentsPixelPublic(string expanded, int maxPixelWidth)
+        => GetWrapSegmentsPixel(expanded, maxPixelWidth);
+
+    /// <summary>Public accessor for CharPixelWidth.</summary>
+    internal int CharPixelWidthPublic(string text, int index, int displayWidth)
+        => CharPixelWidth(text, index, displayWidth);
 
     private string ExpandTabs(string text)
     {
@@ -1628,7 +1862,7 @@ public sealed class EditorSurface : Control
         {
             e.Handled = true;
             e.SuppressKeyPress = true;
-            _caret?.EnsureVisible(_scroll!, VisibleLineCount, MaxVisibleColumns);
+            _caret?.EnsureVisible(_scroll!, VisibleLineCount, ClientSize.Width - TextLeftPadding);
             Invalidate();
         }
 
@@ -1641,7 +1875,7 @@ public sealed class EditorSurface : Control
         {
             InputHandler.ProcessCharInput(e.KeyChar);
             e.Handled = true;
-            _caret?.EnsureVisible(_scroll!, VisibleLineCount, MaxVisibleColumns);
+            _caret?.EnsureVisible(_scroll!, VisibleLineCount, ClientSize.Width - TextLeftPadding);
             Invalidate();
         }
 
@@ -1660,7 +1894,7 @@ public sealed class EditorSurface : Control
         if (_document is null) return (0, 0);
 
         long firstVisible = _scroll?.FirstVisibleLine ?? 0;
-        int hOffset = _wordWrap ? 0 : (_scroll?.HorizontalScrollOffset ?? 0);
+        int hPixelOffset = _wordWrap ? 0 : (_scroll?.HorizontalScrollOffset ?? 0);
 
         if (_wordWrap)
             return HitTestLineColumnWrapped(x, y, firstVisible);
@@ -1677,9 +1911,12 @@ public sealed class EditorSurface : Control
         docLine = Math.Clamp(docLine, 0, _document.LineCount - 1);
 
         // Convert pixel x to character index, accounting for CJK display widths.
+        // HorizontalScrollOffset is pixel-based, so total pixel from line start
+        // is hPixelOffset + (x - TextLeftPadding).
         string lineText = _document.GetLine(docLine);
         string expanded = ExpandTabs(lineText);
-        int charIndex = CharIndexFromPixel(expanded, hOffset, Math.Max(0, x - TextLeftPadding));
+        int totalPixelX = hPixelOffset + Math.Max(0, x - TextLeftPadding);
+        int charIndex = CharIndexFromPixel(expanded, 0, totalPixelX);
         int col = CompressedColumn(lineText, charIndex);
 
         return (docLine, col);
@@ -1688,7 +1925,7 @@ public sealed class EditorSurface : Control
     private (long Line, long Column) HitTestLineColumnWrapped(int x, int y, long firstVisible)
     {
         int targetRow = _lineHeight > 0 ? y / _lineHeight : 0;
-        int wrapCols = WrapColumns;
+        int wrapPx = WrapPixelWidth;
         long totalDocLines = _document!.LineCount;
 
         // firstVisible is a wrap-row index. Map to starting document line.
@@ -1701,17 +1938,17 @@ public sealed class EditorSurface : Control
                 continue;
 
             string lineText = _document.GetLine(docLine);
-            int lineLen = lineText.Length; // approximate expanded length for tab-free text
-            int rowsForLine = Math.Max(1, (lineLen + wrapCols - 1) / wrapCols);
+            string expanded = ExpandTabs(lineText);
+            int rowsForLine = Math.Max(1, CountWrapRowsPixel(expanded, wrapPx));
             int startRow = (docLine == startDocLine) ? wrapOff : 0;
             int renderedRows = rowsForLine - startRow;
 
             if (targetRow < visualRow + renderedRows)
             {
                 int wrapRow = startRow + (targetRow - visualRow);
-                int segStart = wrapRow * wrapCols;
-                int expandedCol = CharIndexFromPixel(lineText, segStart, Math.Max(0, x - TextLeftPadding));
-                expandedCol = Math.Min(expandedCol, lineLen);
+                int segStart = GetWrapSegmentStartPixel(expanded, wrapPx, wrapRow);
+                int expandedCol = CharIndexFromPixel(expanded, segStart, Math.Max(0, x - TextLeftPadding));
+                expandedCol = Math.Min(expandedCol, expanded.Length);
                 int col = CompressedColumn(lineText, expandedCol);
                 return (docLine, col);
             }
@@ -1736,7 +1973,7 @@ public sealed class EditorSurface : Control
         if (_document is null) return (0, 0);
 
         long firstVisible = _scroll?.FirstVisibleLine ?? 0;
-        int hOffset = _wordWrap ? 0 : (_scroll?.HorizontalScrollOffset ?? 0);
+        int hPixelOffset = _wordWrap ? 0 : (_scroll?.HorizontalScrollOffset ?? 0);
 
         int lineIndex = _lineHeight > 0 ? y / _lineHeight : 0;
         long visibleLine = firstVisible + lineIndex;
@@ -1770,15 +2007,10 @@ public sealed class EditorSurface : Control
             return (docLine, expandedCol);
         }
 
-        string lineText = _document.GetLine(docLine);
-        string expanded = ExpandTabs(lineText);
-
         // Compute visual column using a uniform _charWidth grid.
-        // This ensures the same pixel position gives the same visual column
-        // on every line, making the column selection perfectly rectangular.
-        int scrollVisCol = (hOffset <= 0) ? 0
-            : CharIndexToVisualColumn(expanded, Math.Min(hOffset, expanded.Length));
-        int expandedColNoWrap = scrollVisCol + (pixelX + _charWidth / 2) / _charWidth;
+        // HorizontalScrollOffset is pixel-based, so the total pixel offset
+        // from line start is hPixelOffset + pixelX. Convert to grid column.
+        int expandedColNoWrap = (hPixelOffset + pixelX + _charWidth / 2) / _charWidth;
 
         return (docLine, expandedColNoWrap);
     }
@@ -1851,6 +2083,71 @@ public sealed class EditorSurface : Control
             accumulated += charPx;
         }
         return expanded.Length;
+    }
+
+    /// <summary>
+    /// Returns the character index of the first character whose start pixel
+    /// position is at or past <paramref name="pixelOffset"/>. Used to convert
+    /// a pixel-based horizontal scroll offset to a character index for rendering.
+    /// </summary>
+    internal int PixelToCharIndex(string expanded, int pixelOffset)
+    {
+        int acc = 0;
+        for (int i = 0; i < expanded.Length; i++)
+        {
+            int w = GetCharDisplayWidth(expanded, i);
+            if (w == 0) continue;
+            int px = CharPixelWidth(expanded, i, w);
+            if (acc + px > pixelOffset) return i;
+            acc += px;
+        }
+        return expanded.Length;
+    }
+
+    /// <summary>
+    /// Computes the total pixel width of a raw line (with tab expansion).
+    /// Used for pixel-based scroll range calculation.
+    /// </summary>
+    internal int LinePixelWidth(string lineText)
+    {
+        int px = 0;
+        int col = 0;
+        for (int i = 0; i < lineText.Length; i++)
+        {
+            char c = lineText[i];
+            if (c == '\t')
+            {
+                int tabWidth = _tabSize - (col % _tabSize);
+                px += tabWidth * _charWidth;
+                col += tabWidth;
+            }
+            else if (c == '\r' || c == '\n')
+                break;
+            else
+            {
+                int w = GetCharDisplayWidth(lineText, i);
+                if (w > 0)
+                {
+                    px += CharPixelWidth(lineText, i, w);
+                    col += w;
+                }
+            }
+        }
+        return px;
+    }
+
+    /// <summary>
+    /// Converts a character column position in a raw line to a pixel offset.
+    /// Accounts for tabs and CJK character widths.
+    /// </summary>
+    internal int ColumnToPixelOffset(string lineText, int column)
+    {
+        string expanded = ExpandTabs(lineText);
+        // Convert document column (char index in raw text) to the
+        // corresponding index in the tab-expanded text.
+        int expandedIdx = ExpandedColumn(lineText, Math.Min(column, lineText.Length));
+        int charIndex = Math.Min(expandedIdx, expanded.Length);
+        return DisplayX(expanded, 0, charIndex);
     }
 
     /// <summary>
@@ -1955,7 +2252,18 @@ public sealed class EditorSurface : Control
             // because GDI's per-char font fallback can't compose the combining mark.
             Font renderFont = (IsKeycapBase(text[i]) && HasKeycapSuffix(text, i + 1) && _emojiFallbackFont is not null)
                 ? _emojiFallbackFont : font;
-            TextRenderer.DrawText(g, text.Substring(i, len), renderFont, new Point(px, y), color, DrawFlags);
+
+            // CJK opening punctuation: right-align glyph within the fullwidth cell
+            // so the bracket sits next to the following character, not the preceding one.
+            int drawX = px;
+            if (w >= 2 && IsCjkOpeningPunctuation(text[i]))
+            {
+                Size actual = TextRenderer.MeasureText(g, text.Substring(i, len), renderFont, Size.Empty, DrawFlags);
+                if (actual.Width < charPx)
+                    drawX = px + charPx - actual.Width;
+            }
+
+            TextRenderer.DrawText(g, text.Substring(i, len), renderFont, new Point(drawX, y), color, DrawFlags);
             px += charPx;
         }
     }
@@ -2197,6 +2505,27 @@ public sealed class EditorSurface : Control
         if (text[i] == '\uFE0F') i++;
         return i < text.Length && text[i] == '\u20E3';
     }
+
+    /// <summary>
+    /// Returns true for CJK fullwidth opening punctuation whose visible glyph
+    /// should sit on the right side of the fullwidth cell.
+    /// </summary>
+    private static bool IsCjkOpeningPunctuation(char c) => c switch
+    {
+        '\u300A' => true, // 《 LEFT DOUBLE ANGLE BRACKET
+        '\u300C' => true, // 「 LEFT CORNER BRACKET
+        '\u300E' => true, // 『 LEFT WHITE CORNER BRACKET
+        '\u3010' => true, // 【 LEFT BLACK LENTICULAR BRACKET
+        '\u3008' => true, // 〈 LEFT ANGLE BRACKET
+        '\u3014' => true, // 〔 LEFT TORTOISE SHELL BRACKET
+        '\u3016' => true, // 〖 LEFT WHITE LENTICULAR BRACKET
+        '\u3018' => true, // 〘 LEFT WHITE TORTOISE SHELL BRACKET
+        '\u301A' => true, // 〚 LEFT WHITE SQUARE BRACKET
+        '\uFF08' => true, // （ FULLWIDTH LEFT PARENTHESIS
+        '\uFF3B' => true, // ［ FULLWIDTH LEFT SQUARE BRACKET
+        '\uFF5B' => true, // ｛ FULLWIDTH LEFT CURLY BRACKET
+        _ => false,
+    };
 
     // ────────────────────────────────────────────────────────────────────
     //  Cleanup

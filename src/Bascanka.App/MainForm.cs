@@ -52,6 +52,18 @@ public sealed class MainForm : Form
     private readonly CustomHighlightStore _customHighlightStore;
     private readonly RecoveryManager _recoveryManager;
 
+    // ── Deferred large-file recovery data ─────────────────────────────
+    // When a modified large file is restored from crash recovery but its tab
+    // is not the active tab, we defer the expensive async loading until the
+    // tab is first activated.  The recovery metadata is stashed here and
+    // consumed by LoadDeferredTab.
+    private sealed record DeferredRecoveryData(
+        string AddBuffer, IReadOnlyList<Piece> Pieces,
+        int CodePage, bool HasBom, string? LineEnding, string? Language,
+        long SavedCaret, int SavedScroll, int SavedZoom,
+        Guid? RecoveryTabId, bool WordWrap, string? CustomProfileName);
+    private readonly Dictionary<string, DeferredRecoveryData> _deferredRecovery = new(StringComparer.OrdinalIgnoreCase);
+
     // ── Document state ───────────────────────────────────────────────
     private readonly List<TabInfo> _tabs = new();
     private int _activeTabIndex = -1;
@@ -1795,6 +1807,47 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Creates a deferred tab for a modified large file from crash recovery.
+    /// The expensive async MMF scanning is delayed until the tab is activated.
+    /// </summary>
+    internal void AddDeferredRecoveryLargeTab(
+        string path, string addBuffer, IReadOnlyList<Piece> pieces,
+        int codePage, bool hasBom, string? lineEnding, string? language,
+        long savedCaret, int savedScroll, int savedZoom,
+        Guid? recoveryTabId, bool wordWrap, string? customProfileName)
+    {
+        var editor = new EditorControl();
+        editor.Theme = ThemeManager.Instance.CurrentTheme;
+
+        var tab = new TabInfo
+        {
+            Id = recoveryTabId ?? Guid.NewGuid(),
+            Title = Path.GetFileName(path),
+            FilePath = path,
+            IsModified = true,
+            Editor = editor,
+            IsDeferredLoad = true,
+            PendingZoom = savedZoom,
+            PendingScroll = savedScroll,
+            PendingCaret = savedCaret,
+            PendingWordWrap = wordWrap ? true : null,
+            PendingLanguage = language,
+            PendingCustomProfileName = customProfileName,
+            PendingRecoveryFormat = "pieces",
+            PendingEncodingCodePage = codePage,
+            PendingHasBom = hasBom,
+            PendingLineEnding = lineEnding,
+        };
+
+        _deferredRecovery[path] = new DeferredRecoveryData(
+            addBuffer, pieces, codePage, hasBom, lineEnding, language,
+            savedCaret, savedScroll, savedZoom, recoveryTabId, wordWrap, customProfileName);
+
+        _tabs.Add(tab);
+        _tabStrip.AddTab(tab, select: false);
+    }
+
+    /// <summary>
     /// Asynchronously restores a large MMF-backed tab from recovery data.
     /// Creates a placeholder tab immediately, scans the file incrementally on a
     /// background thread, then reconstructs the piece table from recovery pieces.
@@ -1916,7 +1969,8 @@ public sealed class MainForm : Form
                 }
 
                 tab.Editor.FileSizeBytes = batchResult.ScannedBytes;
-                _statusBarManager.ShowLoadingProgress(batchResult.ScannedBytes, fileSize);
+                if (ActiveTab == tab)
+                    _statusBarManager.ShowLoadingProgress(batchResult.ScannedBytes, fileSize);
 
                 if (!done)
                     batchSize = SubsequentBatchChunks;
@@ -1958,7 +2012,8 @@ public sealed class MainForm : Form
 
             RefreshTabDisplay(tab);
             UpdateTitleBar();
-            UpdateStatusBar();
+            if (ActiveTab == tab)
+                UpdateStatusBar();
             _menuBuilder.RefreshEncodingMenu(this);
         }
         catch (Exception ex)
@@ -1980,6 +2035,28 @@ public sealed class MainForm : Form
 
         if (!File.Exists(path))
             return;
+
+        // Check for deferred recovery data (modified large file from crash recovery).
+        if (_deferredRecovery.Remove(path, out var recovery))
+        {
+            long fileSize = new FileInfo(path).Length;
+            int idx = _tabs.IndexOf(tab);
+            if (idx >= 0)
+            {
+                _tabs.RemoveAt(idx);
+                _tabStrip.RemoveTab(idx);
+                _deferredInsertIndex = idx;
+            }
+            RestoreLargeFileFromRecovery(
+                path, fileSize,
+                recovery.AddBuffer, recovery.Pieces,
+                recovery.CodePage, recovery.HasBom, recovery.LineEnding, recovery.Language,
+                recovery.SavedCaret, recovery.SavedScroll,
+                recovery.SavedZoom, recovery.RecoveryTabId, recovery.WordWrap,
+                recovery.CustomProfileName);
+            _deferredInsertIndex = -1;
+            return;
+        }
 
         try
         {
@@ -3577,7 +3654,8 @@ public sealed class MainForm : Form
                 }
 
                 tab.Editor.FileSizeBytes = source.ScannedBytes;
-                _statusBarManager.ShowLoadingProgress(source.ScannedBytes, fileSize);
+                if (ActiveTab == tab)
+                    _statusBarManager.ShowLoadingProgress(source.ScannedBytes, fileSize);
 
                 if (!done)
                     batchSize = SubsequentBatchChunks;
@@ -3595,7 +3673,8 @@ public sealed class MainForm : Form
             if (lexer is not null)
                 tab.Editor.SetLexer(lexer);
 
-            UpdateStatusBar();
+            if (ActiveTab == tab)
+                UpdateStatusBar();
             _menuBuilder.RefreshEncodingMenu(this);
             _pluginHost.RaiseDocumentOpened(path);
         }

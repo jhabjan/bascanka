@@ -1,4 +1,13 @@
-﻿v.1.0.4.		2026-02-21
+﻿v.1.0.5.		????-??-??
+--------------------------
+- horizontal scrolling and text measurement converted from cell-based to pixel-based (layout, scrollbar range, caret, and wrapping now use real pixels instead of fixed cells, enabling correct mixed-width rendering CJK, emoji, tabs, Latin).
+- fixed horizontal scrollbar range not covering full line width - EstimateMaxLinePixelWidth now checks all lines by length (O(1) via cached offsets) and measures top 10 longest, not just visible lines.
+- fixed CJK opening punctuation (《「『【 etc.) rendering issue - rendered now flush against the following character inside double-width cells, matching other CJK editors.
+- fixed cursor stuck on WrapMoveDown - now uses current column instead of sticky desired column (matches WrapMoveUp).
+- fixed sub-character pixel offset at max horizontal scroll - added one MaxCharPixelWidth padding to scrollbar range.
+- fixed caret not visible at end of long lines - ColumnToPixelOffset maps columns via ExpandedColumn for tabbed lines.
+
+v.1.0.4.		2026-02-21
 --------------------------
 - fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
 - fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.

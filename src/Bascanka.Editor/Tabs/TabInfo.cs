@@ -79,6 +79,23 @@ public sealed class TabInfo
     public string? PendingCustomProfileName { get; set; }
 
     /// <summary>
+    /// When set (e.g. "pieces"), indicates this deferred tab has modified content
+    /// stored in the recovery directory.  Used by the recovery manifest writer to
+    /// preserve the format across re-saves, so the data survives even if the tab
+    /// is never activated.
+    /// </summary>
+    public string? PendingRecoveryFormat { get; set; }
+
+    /// <summary>Encoding code page to persist for deferred recovery tabs.</summary>
+    public int PendingEncodingCodePage { get; set; }
+
+    /// <summary>Whether the file had a BOM (for deferred recovery tabs).</summary>
+    public bool PendingHasBom { get; set; }
+
+    /// <summary>Line ending style to persist for deferred recovery tabs.</summary>
+    public string? PendingLineEnding { get; set; }
+
+    /// <summary>
     /// True while the tab's file is being loaded asynchronously (e.g. large file
     /// incremental scan or recovery loading).  Saving is blocked while loading.
     /// </summary>
