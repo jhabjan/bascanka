@@ -85,6 +85,7 @@ internal static class Strings
 
     // Encoding Menu
     internal static string MenuEncoding => LocalizationManager.Get("MenuEncoding");
+    internal static string MenuEncodingChineseGB18030 => LocalizationManager.Get("MenuEncodingChineseGB18030");
     internal static string MenuConvertLineEndings => LocalizationManager.Get("MenuConvertLineEndings");
 
     // Tools Menu
@@ -222,6 +223,8 @@ internal static class Strings
     internal static string SettingsLargeFileThresholdUnit => LocalizationManager.Get("SettingsLargeFileThresholdUnit");
     internal static string SettingsFoldingMaxFileSize => LocalizationManager.Get("SettingsFoldingMaxFileSize");
     internal static string SettingsFoldingMaxFileSizeUnit => LocalizationManager.Get("SettingsFoldingMaxFileSizeUnit");
+    internal static string SettingsWordWrapMaxFileSize => LocalizationManager.Get("SettingsWordWrapMaxFileSize");
+    internal static string SettingsWordWrapMaxFileSizeUnit => LocalizationManager.Get("SettingsWordWrapMaxFileSizeUnit");
     internal static string SettingsMaxRecentFiles => LocalizationManager.Get("SettingsMaxRecentFiles");
     internal static string SettingsSearchHistoryLimit => LocalizationManager.Get("SettingsSearchHistoryLimit");
 
@@ -300,6 +303,7 @@ internal static class Strings
     // Settings descriptions — Performance
     internal static string SettingsLargeFileThresholdDesc => LocalizationManager.Get("SettingsLargeFileThresholdDesc");
     internal static string SettingsFoldingMaxFileSizeDesc => LocalizationManager.Get("SettingsFoldingMaxFileSizeDesc");
+    internal static string SettingsWordWrapMaxFileSizeDesc => LocalizationManager.Get("SettingsWordWrapMaxFileSizeDesc");
     internal static string SettingsMaxRecentFilesDesc => LocalizationManager.Get("SettingsMaxRecentFilesDesc");
     internal static string SettingsSearchHistoryLimitDesc => LocalizationManager.Get("SettingsSearchHistoryLimitDesc");
     internal static string SettingsSearchDebounceDesc => LocalizationManager.Get("SettingsSearchDebounceDesc");

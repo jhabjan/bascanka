@@ -51,6 +51,7 @@ internal sealed class SettingsForm : Form
     // ── Performance controls ────────────────────────────────────────
     private NumericUpDown _largeFileNum = null!;
     private NumericUpDown _foldingMaxNum = null!;
+    private NumericUpDown _wordWrapMaxNum = null!;
     private NumericUpDown _maxRecentFilesNum = null!;
     private NumericUpDown _searchHistoryNum = null!;
     private NumericUpDown _searchDebounceNum = null!;
@@ -227,7 +228,7 @@ internal sealed class SettingsForm : Form
         _ = _gutterPaddingLeftNum; _ = _gutterPaddingRightNum;
         _ = _foldButtonSizeNum; _ = _bookmarkSizeNum;
         _ = _tabHeightNum; _ = _minTabWidthNum; _ = _menuItemPaddingNum; _ = _terminalPaddingNum;
-        _ = _largeFileNum; _ = _foldingMaxNum; _ = _maxRecentFilesNum;
+        _ = _largeFileNum; _ = _foldingMaxNum; _ = _wordWrapMaxNum; _ = _maxRecentFilesNum;
         _ = _searchHistoryNum; _ = _searchDebounceNum;
         _ = _contextMenuCheckBox; _ = _newExplorerContextMenuCheckBox;
     }
@@ -470,6 +471,10 @@ internal sealed class SettingsForm : Form
         // Folding Max File Size (MB)
         _foldingMaxNum = CreateNumeric(1, 500, 10, SettingsManager.GetInt(SettingsManager.KeyFoldingMaxFileSizeMB, 50));
         y = AddLabeledControl(panel, Strings.SettingsFoldingMaxFileSize, _foldingMaxNum, Strings.SettingsFoldingMaxFileSizeUnit, y, Strings.SettingsFoldingMaxFileSizeDesc);
+
+        // Word Wrap Max File Size (MB)
+        _wordWrapMaxNum = CreateNumeric(1, 5000, 10, SettingsManager.GetInt(SettingsManager.KeyWordWrapMaxFileSizeMB, 50));
+        y = AddLabeledControl(panel, Strings.SettingsWordWrapMaxFileSize, _wordWrapMaxNum, Strings.SettingsWordWrapMaxFileSizeUnit, y, Strings.SettingsWordWrapMaxFileSizeDesc);
 
         // Max Recent Files
         _maxRecentFilesNum = CreateNumeric(5, 100, 5, SettingsManager.GetInt(SettingsManager.KeyMaxRecentFiles, RecentFilesManager.MaxRecentFiles));
@@ -931,6 +936,7 @@ internal sealed class SettingsForm : Form
         // ── Performance ─────────────────────────────────────────────
         SettingsManager.SetInt(SettingsManager.KeyLargeFileThresholdMB, (int)_largeFileNum.Value);
         SettingsManager.SetInt(SettingsManager.KeyFoldingMaxFileSizeMB, (int)_foldingMaxNum.Value);
+        SettingsManager.SetInt(SettingsManager.KeyWordWrapMaxFileSizeMB, (int)_wordWrapMaxNum.Value);
         SettingsManager.SetInt(SettingsManager.KeyMaxRecentFiles, (int)_maxRecentFilesNum.Value);
         SettingsManager.SetInt(SettingsManager.KeySearchHistoryLimit, (int)_searchHistoryNum.Value);
         SettingsManager.SetInt(SettingsManager.KeySearchDebounce, (int)_searchDebounceNum.Value);

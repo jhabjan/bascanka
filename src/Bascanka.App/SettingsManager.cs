@@ -5,7 +5,7 @@ namespace Bascanka.App;
 
 /// <summary>
 /// Manages application settings using JSON files in %AppData%\Bascanka.
-/// Settings are stored in <c>settings.json</c>, session state in <c>session.json</c>.
+/// Settings are stored in <c>settings.json</c>.
 /// Explorer context menu registration remains in the Windows Registry.
 /// </summary>
 internal static class SettingsManager
@@ -21,12 +21,10 @@ internal static class SettingsManager
 #endif
 
     private static readonly string SettingsFilePath = Path.Combine(AppDataFolder, "settings.json");
-    private static readonly string SessionFilePath = Path.Combine(AppDataFolder, "session.json");
 
     // ── In-memory caches ────────────────────────────────────────────
 
     private static Dictionary<string, JsonElement>? _settingsCache;
-    private static Dictionary<string, JsonElement>? _sessionCache;
 
     private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
 
@@ -43,17 +41,6 @@ internal static class SettingsManager
             MigrateFromRegistry();
 
         _settingsCache = LoadJsonFile(SettingsFilePath);
-    }
-
-    private static void EnsureSessionLoaded()
-    {
-        if (_sessionCache is not null) return;
-
-        Directory.CreateDirectory(AppDataFolder);
-
-        // Migration populates both caches, but only if settings.json didn't exist.
-        // If session.json is missing but settings.json exists, just load empty.
-        _sessionCache = LoadJsonFile(SessionFilePath);
     }
 
     private static Dictionary<string, JsonElement> LoadJsonFile(string path)
@@ -80,12 +67,6 @@ internal static class SettingsManager
     {
         if (_settingsCache is null) return;
         SaveJsonFile(SettingsFilePath, _settingsCache);
-    }
-
-    private static void SaveSession()
-    {
-        if (_sessionCache is null) return;
-        SaveJsonFile(SessionFilePath, _sessionCache);
     }
 
     private static void SaveJsonFile(string path, Dictionary<string, JsonElement> cache)
@@ -116,7 +97,6 @@ internal static class SettingsManager
     // ── One-time migration from registry ────────────────────────────
 
     private const string RegistryKeyPath = @"Software\Bascanka";
-    private const string SessionRegistryKeyPath = @"Software\Bascanka\Session";
 
     private static void MigrateFromRegistry()
     {
@@ -126,7 +106,6 @@ internal static class SettingsManager
             if (mainKey is null) // Fresh install, no registry data.
             {
                 _settingsCache = new Dictionary<string, JsonElement>();
-                _sessionCache = new Dictionary<string, JsonElement>();
                 return;
             }
 
@@ -141,24 +120,8 @@ internal static class SettingsManager
                     _settingsCache[name] = ToJsonElement(i);
             }
 
-            // Migrate session sub-key.
-            _sessionCache = new Dictionary<string, JsonElement>();
-            using var sessionKey = Registry.CurrentUser.OpenSubKey(SessionRegistryKeyPath);
-            if (sessionKey is not null)
-            {
-                foreach (string name in sessionKey.GetValueNames())
-                {
-                    var val = sessionKey.GetValue(name);
-                    if (val is string s)
-                        _sessionCache[name] = ToJsonElement(s);
-                    else if (val is int i)
-                        _sessionCache[name] = ToJsonElement(i);
-                }
-            }
-
-            // Save both JSON files.
+            // Save settings JSON.
             SaveSettings();
-            SaveSession();
 
             // Clean up registry.
             Registry.CurrentUser.DeleteSubKeyTree(RegistryKeyPath, throwOnMissingSubKey: false);
@@ -167,7 +130,6 @@ internal static class SettingsManager
         {
             // If migration fails, start with empty caches.
             _settingsCache ??= new Dictionary<string, JsonElement>();
-            _sessionCache ??= new Dictionary<string, JsonElement>();
         }
     }
 
@@ -351,13 +313,14 @@ internal static class SettingsManager
     // Performance
     public const string KeyLargeFileThresholdMB = "LargeFileThresholdMB";
     public const string KeyFoldingMaxFileSizeMB = "FoldingMaxFileSizeMB";
+    public const string KeyWordWrapMaxFileSizeMB = "WordWrapMaxFileSizeMB";
     public const string KeyMaxRecentFiles = "MaxRecentFiles";
     public const string KeySearchHistoryLimit = "SearchHistoryLimit";
     public const string KeySearchDebounce = "SearchDebounce";
     public const string KeyAutoSaveInterval = "AutoSaveInterval";
 
     /// <summary>
-    /// Deletes all settings, preserving session state.
+    /// Deletes all settings.
     /// </summary>
     public static void ResetToDefaults()
     {
@@ -368,118 +331,6 @@ internal static class SettingsManager
                 File.Delete(SettingsFilePath);
         }
         catch { }
-    }
-
-    // ── Session ─────────────────────────────────────────────────────
-
-    /// <summary>Gets an integer from session state.</summary>
-    public static int GetSessionInt(string name, int defaultValue = 0)
-    {
-        try
-        {
-            EnsureSessionLoaded();
-            if (_sessionCache!.TryGetValue(name, out var el))
-            {
-                return el.ValueKind switch
-                {
-                    JsonValueKind.Number when el.TryGetInt32(out int i) => i,
-                    JsonValueKind.String when int.TryParse(el.GetString(), out int i) => i,
-                    _ => defaultValue,
-                };
-            }
-        }
-        catch { }
-        return defaultValue;
-    }
-
-    /// <summary>Sets an integer in session state.</summary>
-    public static void SetSessionInt(string name, int value)
-    {
-        try
-        {
-            EnsureSessionLoaded();
-            _sessionCache![name] = ToJsonElement(value);
-            SaveSession();
-        }
-        catch { }
-    }
-
-    /// <summary>Gets a string from session state.</summary>
-    public static string GetSessionString(string name, string defaultValue = "")
-    {
-        try
-        {
-            EnsureSessionLoaded();
-            if (_sessionCache!.TryGetValue(name, out var el))
-            {
-                return el.ValueKind switch
-                {
-                    JsonValueKind.String => el.GetString() ?? defaultValue,
-                    JsonValueKind.Number => el.GetRawText(),
-                    _ => defaultValue,
-                };
-            }
-        }
-        catch { }
-        return defaultValue;
-    }
-
-    /// <summary>Sets a string in session state.</summary>
-    public static void SetSessionString(string name, string value)
-    {
-        try
-        {
-            EnsureSessionLoaded();
-            _sessionCache![name] = ToJsonElement(value);
-            SaveSession();
-        }
-        catch { }
-    }
-
-    /// <summary>Deletes all session state.</summary>
-    public static void ClearSessionState()
-    {
-        try
-        {
-            _sessionCache = new Dictionary<string, JsonElement>();
-            if (File.Exists(SessionFilePath))
-                File.Delete(SessionFilePath);
-        }
-        catch { }
-    }
-
-    /// <summary>Saves structured session data as JSON, replacing the session file.</summary>
-    public static void SaveStructuredSession(object data)
-    {
-        try
-        {
-            Directory.CreateDirectory(AppDataFolder);
-            string json = JsonSerializer.Serialize(data, data.GetType(), WriteOptions);
-
-            // Atomic write: write to .tmp then rename.
-            string tmpPath = SessionFilePath + ".tmp";
-            File.WriteAllText(tmpPath, json);
-            File.Move(tmpPath, SessionFilePath, overwrite: true);
-            _sessionCache = null; // invalidate legacy flat cache
-        }
-        catch { }
-    }
-
-    /// <summary>Reads the session file and returns the root JSON element, or null if not found.</summary>
-    public static JsonElement? ReadSessionRoot()
-    {
-        try
-        {
-            Directory.CreateDirectory(AppDataFolder);
-            if (File.Exists(SessionFilePath))
-            {
-                string json = File.ReadAllText(SessionFilePath);
-                using var doc = JsonDocument.Parse(json);
-                return doc.RootElement.Clone();
-            }
-        }
-        catch { }
-        return null;
     }
 
     // ── Explorer context menu (remains in registry) ─────────────────
@@ -819,7 +670,7 @@ internal static class SettingsManager
         KeyGutterPaddingLeft, KeyGutterPaddingRight,
         KeyFoldButtonSize, KeyBookmarkSize,
         KeyTabHeight, KeyMinTabWidth, KeyMenuItemPadding, KeyRecentFilesSeparated, KeyTerminalPadding,
-        KeyLargeFileThresholdMB, KeyFoldingMaxFileSizeMB,
+        KeyLargeFileThresholdMB, KeyFoldingMaxFileSizeMB, KeyWordWrapMaxFileSizeMB,
         KeyMaxRecentFiles, KeySearchHistoryLimit, KeySearchDebounce,
     ];
 

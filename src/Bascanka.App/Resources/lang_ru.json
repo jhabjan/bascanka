@@ -78,6 +78,7 @@
     "MenuUnfoldAll": "&Развернуть все",
 
     "MenuEncoding": "&Кодировка",
+    "MenuEncodingChineseGB18030": "Китайский (GB18030)",
     "MenuConvertLineEndings": "Преобразовать &концы строк",
 
     "MenuTools": "&Инструменты",
@@ -165,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "МБ",
     "SettingsFoldingMaxFileSize": "Максимальный размер файла для сворачивания",
     "SettingsFoldingMaxFileSizeUnit": "МБ",
+    "SettingsWordWrapMaxFileSize": "Максимальный размер для переноса строк",
+    "SettingsWordWrapMaxFileSizeUnit": "МБ",
     "SettingsMaxRecentFiles": "Максимум недавних файлов",
     "SettingsSearchHistoryLimit": "Лимит истории поиска",
 
@@ -234,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "Файлы больше этого размера используют отображение в память для повышения производительности.",
     "SettingsFoldingMaxFileSizeDesc": "Сворачивание кода отключается для файлов, превышающих этот размер.",
+    "SettingsWordWrapMaxFileSizeDesc": "Перенос строк отключается для файлов, превышающих этот размер.",
     "SettingsMaxRecentFilesDesc": "Максимальное количество записей в списке недавних файлов.",
     "SettingsSearchHistoryLimitDesc": "Максимальное число сохранённых поисковых запросов в панели поиска.",
     "SettingsSearchDebounceDesc": "Задержка перед началом живого поиска после ввода текста.",

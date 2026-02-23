@@ -78,6 +78,7 @@
     "MenuUnfoldAll": "&Рашири све",
 
     "MenuEncoding": "&Кодирање",
+    "MenuEncodingChineseGB18030": "Кинески (GB18030)",
     "MenuConvertLineEndings": "Претвори &завршетке редова",
 
     "MenuTools": "&Алати",
@@ -165,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "MB",
     "SettingsFoldingMaxFileSize": "Макс. величина за савијање",
     "SettingsFoldingMaxFileSizeUnit": "MB",
+    "SettingsWordWrapMaxFileSize": "Макс. величина за преламање текста",
+    "SettingsWordWrapMaxFileSizeUnit": "MB",
     "SettingsMaxRecentFiles": "Макс. недавних датотека",
     "SettingsSearchHistoryLimit": "Ограничење историје претраживања",
 
@@ -234,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "Датотеке изнад ове величине користе меморијско мапирање за перформансе.",
     "SettingsFoldingMaxFileSizeDesc": "Савијање кода онемогућено је за датотеке веће од овог.",
+    "SettingsWordWrapMaxFileSizeDesc": "Преламање текста онемогућено је за датотеке веће од овог.",
     "SettingsMaxRecentFilesDesc": "Максималан број уноса у листи недавних датотека.",
     "SettingsSearchHistoryLimitDesc": "Максималан број сачуваних појмова претраживања.",
     "SettingsSearchDebounceDesc": "Одлагање пре покретања претраживања уживо након куцања.",

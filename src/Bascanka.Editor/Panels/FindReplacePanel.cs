@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Bascanka.Core.Buffer;
 using Bascanka.Core.Search;
@@ -21,6 +22,30 @@ public class FindReplacePanel : UserControl
     /// <summary>Returns a copy of the current search history.</summary>
     public static IReadOnlyList<string> GetSearchHistory() => _searchHistory.ToList();
 
+    /// <summary>Loads search history from disk.</summary>
+    public static void LoadSearchHistoryFromDisk()
+    {
+        try
+        {
+            if (!File.Exists(SearchHistoryPath)) return;
+            string json = File.ReadAllText(SearchHistoryPath);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;
+
+            var items = new List<string>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                    items.Add(item.GetString() ?? string.Empty);
+            }
+            SetSearchHistory(items);
+        }
+        catch
+        {
+            // Ignore malformed history file.
+        }
+    }
+
     /// <summary>Replaces the search history with the given items.</summary>
     public static void SetSearchHistory(IEnumerable<string> items)
     {
@@ -30,6 +55,7 @@ public class FindReplacePanel : UserControl
             if (!string.IsNullOrWhiteSpace(item) && _searchHistory.Count < ConfigMaxHistoryItems)
                 _searchHistory.Add(item);
         }
+        SaveSearchHistory();
     }
     private static int DebounceMsec => EditorControl.DefaultSearchDebounce;
     private const int PanelWidth = 520;
@@ -61,6 +87,7 @@ public class FindReplacePanel : UserControl
     // ── State ─────────────────────────────────────────────────────────
     private readonly SearchEngine _searchEngine = new();
     private static readonly List<string> _searchHistory = [];
+    private static readonly string SearchHistoryPath = Path.Combine(GetAppDataFolder(), "search-history.json");
     private readonly System.Windows.Forms.Timer _debounceTimer;
     private CancellationTokenSource? _searchCts;
     private bool _matchCase;
@@ -669,6 +696,37 @@ public class FindReplacePanel : UserControl
         foreach (string item in _searchHistory)
             _searchBox.Items.Add(item);
         _searchBox.EndUpdate();
+
+        SaveSearchHistory();
+    }
+
+    private static void SaveSearchHistory()
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(SearchHistoryPath) ?? "";
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            string json = JsonSerializer.Serialize(_searchHistory);
+            string tmpPath = SearchHistoryPath + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, SearchHistoryPath, overwrite: true);
+        }
+        catch
+        {
+            // Best effort.
+        }
+    }
+
+    private static string GetAppDataFolder()
+    {
+        string baseDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+#if DEBUG
+        return Path.Combine(baseDir, "Bascanka", "debug");
+#else
+        return Path.Combine(baseDir, "Bascanka");
+#endif
     }
 
     // ── Helpers ───────────────────────────────────────────────────────

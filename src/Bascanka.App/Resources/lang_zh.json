@@ -78,6 +78,7 @@
     "MenuUnfoldAll": "全部展开(&U)",
 
     "MenuEncoding": "编码(&N)",
+    "MenuEncodingChineseGB18030": "中文 (GB18030)",
     "MenuConvertLineEndings": "转换行结束符(&L)",
 
     "MenuTools": "工具(&T)",
@@ -165,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "MB",
     "SettingsFoldingMaxFileSize": "折叠最大文件大小",
     "SettingsFoldingMaxFileSizeUnit": "MB",
+    "SettingsWordWrapMaxFileSize": "自动换行最大文件大小",
+    "SettingsWordWrapMaxFileSizeUnit": "MB",
     "SettingsMaxRecentFiles": "最大最近文件数",
     "SettingsSearchHistoryLimit": "搜索历史限制",
 
@@ -234,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "超过此大小的文件使用内存映射 I/O 以提高性能。",
     "SettingsFoldingMaxFileSizeDesc": "对于大于此大小的文件，代码折叠被禁用。",
+    "SettingsWordWrapMaxFileSizeDesc": "对于大于此大小的文件，自动换行被禁用。",
     "SettingsMaxRecentFilesDesc": "打开最近列表中的最大条目数。",
     "SettingsSearchHistoryLimitDesc": "查找面板中保存的最大搜索词数。",
     "SettingsSearchDebounceDesc": "键入后实时搜索开始前的延迟。",

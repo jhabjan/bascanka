@@ -18,6 +18,8 @@ public sealed class GutterRenderer
     private static int FoldButtonSize => EditorControl.DefaultFoldButtonSize;
 
     private readonly HashSet<long> _bookmarkedLines = new();
+    private long _widthCacheTotalLines = -1;
+    private string _widthCacheFontKey = string.Empty;
 
     // ────────────────────────────────────────────────────────────────────
     //  Properties
@@ -53,12 +55,18 @@ public sealed class GutterRenderer
     /// </summary>
     public void UpdateWidth(long totalLines, Font font, Graphics g)
     {
+        string fontKey = $"{font.FontFamily.Name}|{font.SizeInPoints}|{font.Style}";
+        if (_widthCacheTotalLines == totalLines && string.Equals(_widthCacheFontKey, fontKey, StringComparison.Ordinal))
+            return;
+
         int digits = Math.Max(2, totalLines.ToString().Length);
         string sample = new string('9', digits);
         Size textSize = TextRenderer.MeasureText(g, sample, font, Size.Empty,
             TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
         Width = GutterPaddingLeft + textSize.Width + GutterPaddingRight + FoldButtonSize + 4;
+        _widthCacheTotalLines = totalLines;
+        _widthCacheFontKey = fontKey;
     }
 
     /// <summary>

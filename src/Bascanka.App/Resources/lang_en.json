@@ -78,6 +78,7 @@
     "MenuUnfoldAll": "&Unfold All",
 
     "MenuEncoding": "E&ncoding",
+    "MenuEncodingChineseGB18030": "Chinese (GB18030)",
     "MenuConvertLineEndings": "Convert &Line Endings",
 
     "MenuTools": "&Tools",
@@ -165,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "MB",
     "SettingsFoldingMaxFileSize": "Folding Max File Size",
     "SettingsFoldingMaxFileSizeUnit": "MB",
+    "SettingsWordWrapMaxFileSize": "Word Wrap Max File Size",
+    "SettingsWordWrapMaxFileSizeUnit": "MB",
     "SettingsMaxRecentFiles": "Max Recent Files",
     "SettingsSearchHistoryLimit": "Search History Limit",
 
@@ -234,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "Files above this size use memory-mapped I/O for performance.",
     "SettingsFoldingMaxFileSizeDesc": "Code folding is disabled for files larger than this.",
+    "SettingsWordWrapMaxFileSizeDesc": "Word wrap is disabled for files larger than this.",
     "SettingsMaxRecentFilesDesc": "Maximum number of entries in the Open Recent list.",
     "SettingsSearchHistoryLimitDesc": "Maximum saved search terms in the Find panel.",
     "SettingsSearchDebounceDesc": "Delay before live search starts after typing.",

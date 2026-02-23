@@ -44,7 +44,6 @@ public sealed class MainForm : Form
     // ── Sub-managers ─────────────────────────────────────────────────
     private readonly MenuBuilder _menuBuilder;
     private readonly StatusBarManager _statusBarManager;
-    private readonly SessionManager _sessionManager;
     private readonly RecentFilesManager _recentFilesManager;
     private readonly FileWatcher _fileWatcher;
     private readonly PluginHost _pluginHost;
@@ -99,6 +98,7 @@ public sealed class MainForm : Form
         // Load all persisted settings into static properties.
         LoadAllSettings();
         ApplyThemeOverridesFromRegistry();
+        FindReplacePanel.LoadSearchHistoryFromDisk();
 
         // ── Form properties ──────────────────────────────────────────
         Text = Strings.AppTitle;
@@ -223,7 +223,6 @@ public sealed class MainForm : Form
         RegisterDefaultShortcuts();
 
         _statusBarManager = new StatusBarManager(_statusStrip);
-        _sessionManager = new SessionManager();
         _recentFilesManager = new RecentFilesManager();
         _fileWatcher = new FileWatcher(this);
         _pluginHost = new PluginHost(this);
@@ -241,7 +240,7 @@ public sealed class MainForm : Form
         ApplyLocalizedMenuTexts();
 
         // Restore window geometry from previous session (before OnLoad).
-        _sessionManager.RestoreWindowState(this);
+        _recoveryManager.RestoreWindowState();
 
         // Rebuild the entire UI when the user switches language.
         LocalizationManager.LanguageChanged += OnUILanguageChanged;
@@ -271,6 +270,8 @@ public sealed class MainForm : Form
     public TabInfo? ActiveTab => _activeTabIndex >= 0 && _activeTabIndex < _tabs.Count
         ? _tabs[_activeTabIndex]
         : null;
+
+    public bool CanToggleWordWrap => ActiveTab is not null && IsWordWrapAllowed(ActiveTab);
 
     /// <summary>Gets the tab strip control.</summary>
     internal TabStrip TabStrip => _tabStrip;
@@ -500,11 +501,14 @@ public sealed class MainForm : Form
         tab.FilePath = dialog.FileName;
         tab.Title = Path.GetFileName(dialog.FileName);
 
-        // Detect language for the new extension.
-        string ext = Path.GetExtension(dialog.FileName);
-        ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
-        if (lexer is not null)
-            tab.Editor.SetLexer(lexer);
+        // Detect language for the new extension only when no custom profile is active.
+        if (tab.SelectedCustomProfileName is null)
+        {
+            string ext = Path.GetExtension(dialog.FileName);
+            ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
+            if (lexer is not null)
+                tab.Editor.SetLexer(lexer);
+        }
 
         SaveDocument(tab);
 
@@ -734,6 +738,9 @@ public sealed class MainForm : Form
                 tab.Editor.SetLexer(lexer);
         }
 
+        tab.SelectedCustomProfileName = null;
+        tab.PendingCustomProfileName = null;
+
         UpdateStatusBar();
         _menuBuilder.RefreshLanguageMenu(this);
     }
@@ -752,7 +759,12 @@ public sealed class MainForm : Form
 
         var profile = _customHighlightStore.FindByName(name);
         if (profile is not null)
+        {
             tab.Editor.SetCustomHighlighting(profile);
+            tab.SelectedCustomProfileName = profile.Name;
+            tab.PendingCustomProfileName = profile.Name;
+            tab.PendingLanguage = null;
+        }
 
         UpdateStatusBar();
         _menuBuilder.RefreshLanguageMenu(this);
@@ -773,6 +785,10 @@ public sealed class MainForm : Form
         {
             var profile = _customHighlightStore.FindByName(tab.Editor.CustomProfileName);
             tab.Editor.SetCustomHighlighting(profile); // null clears it if deleted
+            tab.SelectedCustomProfileName = tab.Editor.CustomProfileName;
+            tab.PendingCustomProfileName = tab.Editor.CustomProfileName;
+            if (tab.Editor.CustomProfileName is not null)
+                tab.PendingLanguage = null;
         }
 
         UpdateStatusBar();
@@ -837,12 +853,24 @@ public sealed class MainForm : Form
     /// </summary>
     public void ToggleWordWrap()
     {
-        if (ActiveTab is not null)
+        var tab = ActiveTab;
+        if (tab is null) return;
+
+        if (!tab.Editor.WordWrap)
         {
-            ActiveTab.Editor.WordWrap = !ActiveTab.Editor.WordWrap;
-            SettingsManager.SetBool(SettingsManager.KeyWordWrap, ActiveTab.Editor.WordWrap);
-            _menuBuilder.UpdateMenuState(this);
+            if (!IsWordWrapAllowed(tab))
+                return;
+
+            tab.Editor.WordWrap = true;
+            SettingsManager.SetBool(SettingsManager.KeyWordWrap, true);
         }
+        else
+        {
+            tab.Editor.WordWrap = false;
+            SettingsManager.SetBool(SettingsManager.KeyWordWrap, false);
+        }
+
+        _menuBuilder.UpdateMenuState(this);
     }
 
     /// <summary>
@@ -1374,6 +1402,7 @@ public sealed class MainForm : Form
         // Performance
         LargeFileThreshold = (long)SettingsManager.GetInt(SettingsManager.KeyLargeFileThresholdMB, 10) * 1024 * 1024;
         EditorControl.FoldingMaxFileSize = (long)SettingsManager.GetInt(SettingsManager.KeyFoldingMaxFileSizeMB, 50) * 1_000_000;
+        WordWrapMaxFileSizeBytes = (long)SettingsManager.GetInt(SettingsManager.KeyWordWrapMaxFileSizeMB, 50) * 1024 * 1024;
         RecentFilesManager.MaxRecentFiles = SettingsManager.GetInt(SettingsManager.KeyMaxRecentFiles, 20);
         FindReplacePanel.ConfigMaxHistoryItems = SettingsManager.GetInt(SettingsManager.KeySearchHistoryLimit, 25);
         EditorControl.DefaultSearchDebounce = SettingsManager.GetInt(SettingsManager.KeySearchDebounce, 300);
@@ -1549,19 +1578,11 @@ public sealed class MainForm : Form
             SettingsManager.SetString(SettingsManager.KeyTheme, ThemeManager.Instance.CurrentTheme.Name);
         };
 
-        // Restore previous session (or crash recovery), then open any command-line files on top.
-        if (RecoveryManager.HasRecoveryData() && _recoveryManager.RestoreFromRecovery())
+        // Restore previous session from the recovery manifest, then open any command-line files on top.
+        if (!_recoveryManager.RestoreFromRecovery() && _initialFiles.Length == 0)
         {
-            // Crash recovery succeeded.
-        }
-        else
-        {
-            // Try to restore previous session.
-            if (!_sessionManager.RestoreSession(this) && _initialFiles.Length == 0)
-            {
-                // No session to restore and no files to open; create a new empty document.
-                NewDocument();
-            }
+            // No session to restore and no files to open; create a new empty document.
+            NewDocument();
         }
 
         // Open files from command line (on top of the restored session).
@@ -1625,32 +1646,19 @@ public sealed class MainForm : Form
         // Stop the recovery timer — we'll do a final write below.
         _recoveryManager.Stop();
 
-        bool hasModified = _tabs.Any(t => t.IsModified);
-
-        if (hasModified)
+        // Force a final snapshot so the manifest stays up to date and dirty tabs survive exit.
+        foreach (var tab in _tabs)
         {
-            // Force a final recovery snapshot so dirty tabs survive the exit.
-            // Mark all modified tabs dirty so the final tick writes their content.
-            foreach (var tab in _tabs)
-            {
-                if (tab.IsModified)
-                    _recoveryManager.MarkDirty(tab.Id);
-            }
-            _recoveryManager.ForceWrite();
-            // Do NOT clean up recovery data — next launch will restore it.
+            if (tab.IsModified)
+                _recoveryManager.MarkDirty(tab.Id);
         }
-        else
-        {
-            // No unsaved work — delete recovery data for a clean start.
-            _recoveryManager.CleanUp();
-        }
+        _recoveryManager.ForceWrite();
         _recoveryManager.Dispose();
 
         // Stop terminal process.
         _terminalPanel?.Stop();
 
-        // Save session and shutdown plugins.
-        _sessionManager.SaveSession(this);
+        // Shutdown plugins.
         _pluginHost.Shutdown();
         _fileWatcher.Dispose();
         _singleInstance?.Dispose();
@@ -1994,7 +2002,7 @@ public sealed class MainForm : Form
 
             if (savedZoom != 0)
                 tab.Editor.ZoomLevel = savedZoom;
-            if (wordWrap)
+            if (wordWrap && IsWordWrapAllowed(tab))
                 tab.Editor.WordWrap = true;
 
             if (!string.IsNullOrEmpty(customProfileName))
@@ -2099,9 +2107,12 @@ public sealed class MainForm : Form
             WireEditorEvents(tab.Editor);
 
             string ext = Path.GetExtension(path);
-            ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
-            if (lexer is not null)
-                tab.Editor.SetLexer(lexer);
+            if (tab.SelectedCustomProfileName is null)
+            {
+                ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
+                if (lexer is not null)
+                    tab.Editor.SetLexer(lexer);
+            }
 
             _fileWatcher.Watch(tab);
         }
@@ -2125,7 +2136,14 @@ public sealed class MainForm : Form
         {
             var profile = _customHighlightStore.FindByName(tab.PendingCustomProfileName);
             if (profile is not null)
+            {
                 tab.Editor.SetCustomHighlighting(profile);
+                tab.SelectedCustomProfileName = profile.Name;
+            }
+            else
+            {
+                tab.SelectedCustomProfileName = null;
+            }
             tab.PendingCustomProfileName = null;
             tab.PendingLanguage = null;
         }
@@ -2139,6 +2157,7 @@ public sealed class MainForm : Form
                 if (lexer is not null)
                     tab.Editor.SetLexer(lexer);
             }
+            tab.SelectedCustomProfileName = null;
             tab.PendingLanguage = null;
         }
 
@@ -2152,7 +2171,7 @@ public sealed class MainForm : Form
             tab.Editor.ScrollMgr.FirstVisibleLine = tab.PendingScroll;
         if (tab.PendingCaret > 0 && tab.PendingCaret <= tab.Editor.GetBufferLength())
             tab.Editor.CaretOffset = tab.PendingCaret;
-        if (tab.PendingWordWrap == true)
+        if (tab.PendingWordWrap == true && IsWordWrapAllowed(tab))
             tab.Editor.WordWrap = true;
 
         tab.PendingZoom = 0;
@@ -2196,6 +2215,15 @@ public sealed class MainForm : Form
             // User cancelled the UAC prompt.
             return false;
         }
+    }
+
+    private static bool IsWordWrapAllowed(TabInfo tab)
+    {
+        if (WordWrapMaxFileSizeBytes <= 0)
+            return true;
+
+        long size = tab.Editor.FileSizeBytes;
+        return size <= 0 || size <= WordWrapMaxFileSizeBytes;
     }
 
     /// <summary>
@@ -3470,6 +3498,7 @@ public sealed class MainForm : Form
     /// on a background thread. Configurable via Settings.
     /// </summary>
     private static long LargeFileThreshold { get; set; } = 10L * 1024 * 1024;
+    private static long WordWrapMaxFileSizeBytes { get; set; } = 50L * 1024 * 1024;
 
     /// <summary>
     /// Auto-save interval for crash recovery, in seconds. Configurable via Settings.
@@ -3551,6 +3580,7 @@ public sealed class MainForm : Form
     {
         // 1. Create tab immediately with an empty document.
         var editor = new EditorControl(new PieceTable(string.Empty));
+        editor.FileSizeBytes = fileSize;
         editor.Theme = ThemeManager.Instance.CurrentTheme;
         editor.IsReadOnly = true;
         WireEditorEvents(editor);

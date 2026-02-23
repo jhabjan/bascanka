@@ -79,6 +79,12 @@ public sealed class TabInfo
     public string? PendingCustomProfileName { get; set; }
 
     /// <summary>
+    /// Last selected custom highlight profile for this tab. Used for session
+    /// persistence even if temporary lexer switches occur before shutdown.
+    /// </summary>
+    public string? SelectedCustomProfileName { get; set; }
+
+    /// <summary>
     /// When set (e.g. "pieces"), indicates this deferred tab has modified content
     /// stored in the recovery directory.  Used by the recovery manifest writer to
     /// preserve the format across re-saves, so the data survives even if the tab
