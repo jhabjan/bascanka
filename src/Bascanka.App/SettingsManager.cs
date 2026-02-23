@@ -319,6 +319,99 @@ internal static class SettingsManager
     public const string KeySearchDebounce = "SearchDebounce";
     public const string KeyAutoSaveInterval = "AutoSaveInterval";
 
+    // Binary file extension preferences
+    public const string KeyBinaryFileExtPrefs = "BinaryFileExtPrefs";
+
+    // ── Binary file extension preferences ─────────────────────────
+
+    /// <summary>
+    /// Gets the saved open-mode preference for a file extension, or null if none saved.
+    /// Returns "hex" or "text".
+    /// </summary>
+    public static string? GetBinaryExtPref(string ext)
+    {
+        try
+        {
+            EnsureLoaded();
+            if (_settingsCache!.TryGetValue(KeyBinaryFileExtPrefs, out var el)
+                && el.ValueKind == JsonValueKind.Object)
+            {
+                string key = ext.ToLowerInvariant();
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (string.Equals(prop.Name, key, StringComparison.OrdinalIgnoreCase)
+                        && prop.Value.ValueKind == JsonValueKind.String)
+                        return prop.Value.GetString();
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>
+    /// Sets or removes the open-mode preference for a file extension.
+    /// Pass null to remove the entry.
+    /// </summary>
+    public static void SetBinaryExtPref(string ext, string? mode)
+    {
+        try
+        {
+            EnsureLoaded();
+            var dict = GetAllBinaryExtPrefs();
+            string key = ext.ToLowerInvariant();
+            if (mode is null)
+                dict.Remove(key);
+            else
+                dict[key] = mode;
+
+            if (dict.Count == 0)
+                _settingsCache!.Remove(KeyBinaryFileExtPrefs);
+            else
+                _settingsCache![KeyBinaryFileExtPrefs] = ParseRawJsonElement(
+                    JsonSerializer.Serialize(dict));
+            SaveSettings();
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Returns all saved binary file extension preferences.
+    /// </summary>
+    public static Dictionary<string, string> GetAllBinaryExtPrefs()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            EnsureLoaded();
+            if (_settingsCache!.TryGetValue(KeyBinaryFileExtPrefs, out var el)
+                && el.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                        result[prop.Name] = prop.Value.GetString()!;
+                }
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    /// <summary>
+    /// Removes all saved binary file extension preferences.
+    /// </summary>
+    public static void ClearAllBinaryExtPrefs()
+    {
+        try
+        {
+            EnsureLoaded();
+            _settingsCache!.Remove(KeyBinaryFileExtPrefs);
+            SaveSettings();
+        }
+        catch { }
+    }
+
     /// <summary>
     /// Deletes all settings.
     /// </summary>
@@ -712,11 +805,14 @@ internal static class SettingsManager
             }
         }
 
+        var binaryExtPrefs = GetAllBinaryExtPrefs();
+
         var root = new Dictionary<string, object>
         {
             ["version"] = 1,
             ["settings"] = settings,
             ["themeOverrides"] = themeOverrides,
+            ["binaryFileExtPrefs"] = binaryExtPrefs,
         };
 
         return JsonSerializer.Serialize(root, WriteOptions);
@@ -749,6 +845,16 @@ internal static class SettingsManager
                     SetThemeOverrides(prop.Name, prop.Value.GetRawText());
                 else if (prop.Value.ValueKind == JsonValueKind.String)
                     SetThemeOverrides(prop.Name, prop.Value.GetString());
+            }
+        }
+
+        if (root.TryGetProperty("binaryFileExtPrefs", out var binaryEl)
+            && binaryEl.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in binaryEl.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.String)
+                    SetBinaryExtPref(prop.Name, prop.Value.GetString());
             }
         }
     }

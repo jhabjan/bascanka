@@ -61,6 +61,9 @@ internal sealed class SettingsForm : Form
     private CheckBox _contextMenuCheckBox = null!;
     private CheckBox _newExplorerContextMenuCheckBox = null!;
 
+    // ── Files controls ───────────────────────────────────────────────
+    private ListView _binaryExtPrefsList = null!;
+
     // ── Color grid entries ───────────────────────────────────────────
     private static readonly (string Group, string Property, string DisplayName)[] ColorEntries =
     [
@@ -146,6 +149,7 @@ internal sealed class SettingsForm : Form
         _categoryList.Items.Add(Strings.SettingsCategoryAppearance);
         _categoryList.Items.Add(Strings.SettingsCategoryDisplay);
         _categoryList.Items.Add(Strings.SettingsCategoryPerformance);
+        _categoryList.Items.Add(Strings.SettingsCategoryFiles);
         _categoryList.Items.Add(Strings.SettingsCategorySystem);
         _categoryList.SelectedIndexChanged += (_, _) => ShowCategory(_categoryList.SelectedIndex);
 
@@ -161,8 +165,9 @@ internal sealed class SettingsForm : Form
         var appearancePanel = BuildAppearancePanel();
         var displayPanel = BuildDisplayPanel();
         var perfPanel = BuildPerformancePanel();
+        var filesPanel = BuildFilesPanel();
         var systemPanel = BuildSystemPanel();
-        _categoryPanels = [editorPanel, appearancePanel, displayPanel, perfPanel, systemPanel];
+        _categoryPanels = [editorPanel, appearancePanel, displayPanel, perfPanel, filesPanel, systemPanel];
 
         foreach (var p in _categoryPanels)
         {
@@ -491,6 +496,70 @@ internal sealed class SettingsForm : Form
         // Auto-Save Interval
         _autoSaveIntervalNum = CreateNumeric(1, 300, 5, SettingsManager.GetInt(SettingsManager.KeyAutoSaveInterval, RecoveryManager.DefaultIntervalSeconds));
         y = AddLabeledControl(panel, Strings.SettingsAutoSaveInterval, _autoSaveIntervalNum, Strings.SettingsAutoSaveIntervalUnit, y, Strings.SettingsAutoSaveIntervalDesc);
+
+        return panel;
+    }
+
+    private Panel BuildFilesPanel()
+    {
+        var panel = new Panel { AutoScroll = true };
+        int y = 0;
+
+        // ── Binary File Preferences header ───────────────────────
+        var binaryHeader = new Label
+        {
+            Text = Strings.SettingsBinaryExtPrefs,
+            Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+            ForeColor = _theme.EditorForeground,
+            AutoSize = true,
+            Location = new Point(0, y),
+        };
+        panel.Controls.Add(binaryHeader);
+        y += binaryHeader.PreferredHeight + 4;
+
+        var binaryDesc = new Label
+        {
+            Text = Strings.SettingsBinaryExtPrefsDesc,
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = MutedColor(),
+            AutoSize = true,
+            MaximumSize = new Size(460, 0),
+            Location = new Point(0, y),
+        };
+        panel.Controls.Add(binaryDesc);
+        y += binaryDesc.PreferredHeight + 10;
+
+        // ── ListView ─────────────────────────────────────────────
+        _binaryExtPrefsList = new ListView
+        {
+            View = View.Details,
+            FullRowSelect = true,
+            HeaderStyle = ColumnHeaderStyle.Nonclickable,
+            GridLines = true,
+            Location = new Point(0, y),
+            Size = new Size(340, 160),
+            Font = new Font("Segoe UI", 9.5f),
+            BackColor = _theme.FindPanelBackground,
+            ForeColor = _theme.EditorForeground,
+        };
+        _binaryExtPrefsList.Columns.Add(Strings.SettingsBinaryExtColExt, 140);
+        _binaryExtPrefsList.Columns.Add(Strings.SettingsBinaryExtColMode, 180);
+        _binaryExtPrefsList.MouseDoubleClick += OnBinaryExtPrefDoubleClick;
+        PopulateBinaryExtPrefsList();
+        panel.Controls.Add(_binaryExtPrefsList);
+
+        // Buttons to the right of the list
+        var deleteBtn = CreateButton(Strings.SettingsBinaryExtDelete);
+        deleteBtn.Width = 100;
+        deleteBtn.Location = new Point(350, y);
+        deleteBtn.Click += OnBinaryExtDeleteClick;
+        panel.Controls.Add(deleteBtn);
+
+        var clearBtn = CreateButton(Strings.SettingsBinaryExtClearAll);
+        clearBtn.Width = 100;
+        clearBtn.Location = new Point(350, y + 40);
+        clearBtn.Click += OnBinaryExtClearAllClick;
+        panel.Controls.Add(clearBtn);
 
         return panel;
     }
@@ -1037,6 +1106,65 @@ internal sealed class SettingsForm : Form
 
         _contextMenuCheckBox.Checked = SettingsManager.IsExplorerContextMenuRegistered();
         _newExplorerContextMenuCheckBox.Checked = SettingsManager.IsNewExplorerContextMenuRegistered();
+
+        // Binary file preferences
+        PopulateBinaryExtPrefsList();
+    }
+
+    private static string BinaryModeDisplayName(string mode) =>
+        mode == "hex" ? Strings.SettingsBinaryExtModeHex : Strings.SettingsBinaryExtModeText;
+
+    private void PopulateBinaryExtPrefsList()
+    {
+        _binaryExtPrefsList.Items.Clear();
+        foreach (var (ext, mode) in SettingsManager.GetAllBinaryExtPrefs())
+        {
+            var item = new ListViewItem([ext, BinaryModeDisplayName(mode)]);
+            item.Tag = mode; // store raw value for toggling
+            _binaryExtPrefsList.Items.Add(item);
+        }
+    }
+
+    private void OnBinaryExtPrefDoubleClick(object? sender, MouseEventArgs e)
+    {
+        var hit = _binaryExtPrefsList.HitTest(e.Location);
+        if (hit.Item is null) return;
+
+        // Only toggle when clicking the mode column (sub-item index 1).
+        // SubItem 0 = extension column — ignore double-clicks there.
+        if (hit.SubItem != hit.Item.SubItems[1]) return;
+
+        string ext = hit.Item.Text;
+        string currentMode = hit.Item.Tag as string ?? "hex";
+        string newMode = currentMode == "hex" ? "text" : "hex";
+
+        SettingsManager.SetBinaryExtPref(ext, newMode);
+        hit.Item.Tag = newMode;
+        hit.Item.SubItems[1].Text = BinaryModeDisplayName(newMode);
+    }
+
+    private void OnBinaryExtDeleteClick(object? sender, EventArgs e)
+    {
+        if (_binaryExtPrefsList.SelectedItems.Count == 0) return;
+        string ext = _binaryExtPrefsList.SelectedItems[0].Text;
+        SettingsManager.SetBinaryExtPref(ext, null);
+        PopulateBinaryExtPrefsList();
+    }
+
+    private void OnBinaryExtClearAllClick(object? sender, EventArgs e)
+    {
+        if (_binaryExtPrefsList.Items.Count == 0) return;
+
+        var result = MessageBox.Show(
+            Strings.SettingsBinaryExtClearConfirm,
+            Strings.SettingsTitle,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (result != DialogResult.Yes) return;
+
+        SettingsManager.ClearAllBinaryExtPrefs();
+        PopulateBinaryExtPrefsList();
     }
 
     private void OnExportClick(object? sender, EventArgs e)

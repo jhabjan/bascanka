@@ -387,29 +387,47 @@ public sealed class MainForm : Form
         try
         {
             long fileSize = new FileInfo(path).Length;
+            System.Text.Encoding? forcedBinaryTextEncoding = null;
 
             // Binary detection: read only the first 8 KB instead of the whole file.
             if (IsBinaryFileFromStream(path))
             {
-                byte[] rawBytes = File.ReadAllBytes(path);
-                OpenBinaryFile(path, rawBytes);
-                return;
+                string? mode = ResolveBinaryOpenMode(path, fileSize);
+                if (mode is null) return; // cancelled
+                if (mode == "hex")
+                {
+                    if (fileSize > 100 * 1024 * 1024)
+                    {
+                        MessageBox.Show(this,
+                            string.Format(Strings.BinaryFileTooLargeForHex, fileSize / (1024 * 1024)),
+                            Strings.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    byte[] rawBytes = File.ReadAllBytes(path);
+                    OpenBinaryFile(path, rawBytes);
+                    return;
+                }
+                // mode == "text": fall through with forced Latin-1 encoding
+                //                 to avoid misdetecting binary as Chinese/GB18030.
+                forcedBinaryTextEncoding = System.Text.Encoding.GetEncoding(1252);
             }
 
             // ── Large file path: memory-mapped + async ──────────────────
             if (fileSize > LargeFileThreshold)
             {
-                OpenLargeFile(path, fileSize);
+                OpenLargeFile(path, fileSize, forcedBinaryTextEncoding);
                 return;
             }
 
             // ── Small file path: existing sync pipeline ─────────────────
             byte[] smallRawBytes = File.ReadAllBytes(path);
 
-            // Detect encoding.
-            var encoding = EncodingDetector.DetectEncoding(smallRawBytes.AsSpan());
+            // Detect encoding (skip detection for known-binary opened as text).
+            var encoding = forcedBinaryTextEncoding
+                ?? EncodingDetector.DetectEncoding(smallRawBytes.AsSpan());
             byte[] preamble = encoding.GetPreamble();
-            bool hasBom = preamble.Length > 0 && smallRawBytes.Length >= preamble.Length
+            bool hasBom = forcedBinaryTextEncoding is null
+                && preamble.Length > 0 && smallRawBytes.Length >= preamble.Length
                 && smallRawBytes.AsSpan(0, preamble.Length).SequenceEqual(preamble);
 
             string text = encoding.GetString(smallRawBytes);
@@ -3406,6 +3424,35 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Resolves how a binary file should be opened: "hex", "text", or null (cancelled).
+    /// Checks saved per-extension preferences first; if none, shows the dialog.
+    /// </summary>
+    private string? ResolveBinaryOpenMode(string path, long fileSize)
+    {
+        string ext = Path.GetExtension(path).ToLowerInvariant();
+
+        // Check saved preference.
+        string? saved = SettingsManager.GetBinaryExtPref(ext);
+        if (saved is not null)
+            return saved;
+
+        // Show dialog.
+        string fileName = Path.GetFileName(path);
+        using var dlg = new BinaryFileOpenDialog(fileName, ext);
+        dlg.ApplyTheme(ThemeManager.Instance.CurrentTheme);
+
+        if (dlg.ShowDialog(this) != DialogResult.OK)
+            return null;
+
+        string mode = dlg.IsHexMode ? "hex" : "text";
+
+        if (dlg.RememberChoice && !string.IsNullOrEmpty(ext))
+            SettingsManager.SetBinaryExtPref(ext, mode);
+
+        return mode;
+    }
+
+    /// <summary>
     /// Opens a binary file in hex-only mode (no text editor).
     /// </summary>
     private void OpenBinaryFile(string path, byte[] rawBytes)
@@ -3540,6 +3587,8 @@ public sealed class MainForm : Form
     /// via a small <see cref="FileStream"/> instead of loading the entire file.
     /// Files with a UTF-16/UTF-32 BOM are not considered binary even though
     /// they naturally contain null bytes.
+    /// Recognises known binary file signatures (PDF, ZIP, PE, etc.) in
+    /// addition to the null-byte heuristic.
     /// </summary>
     private static bool IsBinaryFileFromStream(string path)
     {
@@ -3564,6 +3613,10 @@ public sealed class MainForm : Form
             buffer[2] == 0xFE && buffer[3] == 0xFF)
             return false;
 
+        // Known binary file signatures (magic bytes).
+        if (HasBinarySignature(buffer.AsSpan(0, bytesRead)))
+            return true;
+
         for (int i = 0; i < bytesRead; i++)
         {
             if (buffer[i] == 0)
@@ -3573,10 +3626,87 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Checks for well-known binary file magic bytes at the start of the buffer.
+    /// </summary>
+    private static bool HasBinarySignature(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 4) return false;
+
+        // PDF: %PDF
+        if (data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46)
+            return true;
+
+        // PE executable: MZ
+        if (data[0] == 0x4D && data[1] == 0x5A)
+            return true;
+
+        // ZIP / DOCX / XLSX / JAR / APK: PK\x03\x04
+        if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04)
+            return true;
+
+        // GZip: \x1F\x8B
+        if (data[0] == 0x1F && data[1] == 0x8B)
+            return true;
+
+        // PNG: \x89PNG
+        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+            return true;
+
+        // JPEG: \xFF\xD8\xFF
+        if (data.Length >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
+            return true;
+
+        // GIF: GIF8
+        if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38)
+            return true;
+
+        // BMP: BM
+        if (data[0] == 0x42 && data[1] == 0x4D)
+            return true;
+
+        // TIFF: II\x2A\x00 or MM\x00\x2A
+        if ((data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00) ||
+            (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A))
+            return true;
+
+        // WebP: RIFF....WEBP
+        if (data.Length >= 12 &&
+            data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+            data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50)
+            return true;
+
+        // 7-Zip: 7z\xBC\xAF\x27\x1C
+        if (data.Length >= 6 &&
+            data[0] == 0x37 && data[1] == 0x7A && data[2] == 0xBC && data[3] == 0xAF &&
+            data[4] == 0x27 && data[5] == 0x1C)
+            return true;
+
+        // RAR: Rar!
+        if (data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21)
+            return true;
+
+        // ELF: \x7FELF
+        if (data[0] == 0x7F && data[1] == 0x45 && data[2] == 0x4C && data[3] == 0x46)
+            return true;
+
+        // Mach-O: \xFE\xED\xFA\xCE / \xFE\xED\xFA\xCF / \xCE\xFA\xED\xFE / \xCF\xFA\xED\xFE
+        if ((data[0] == 0xFE && data[1] == 0xED && data[2] == 0xFA && (data[3] == 0xCE || data[3] == 0xCF)) ||
+            ((data[0] == 0xCE || data[0] == 0xCF) && data[1] == 0xFA && data[2] == 0xED && data[3] == 0xFE))
+            return true;
+
+        // WASM: \x00asm
+        if (data[0] == 0x00 && data[1] == 0x61 && data[2] == 0x73 && data[3] == 0x6D)
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
     /// Opens a large file with incremental progressive loading.  The user sees
     /// content appear and grow as chunks are scanned in the background.
     /// </summary>
-    private async void OpenLargeFile(string path, long fileSize)
+    private async void OpenLargeFile(string path, long fileSize,
+        System.Text.Encoding? forcedEncoding = null)
     {
         // 1. Create tab immediately with an empty document.
         var editor = new EditorControl(new PieceTable(string.Empty));
@@ -3608,7 +3738,8 @@ public sealed class MainForm : Form
         {
             // 2. Create MMF source with deferred scanning.
             var source = await Task.Run(() =>
-                new MemoryMappedFileSource(path, normalizeLineEndings: true, deferScan: true));
+                new MemoryMappedFileSource(path, encoding: forcedEncoding,
+                    normalizeLineEndings: true, deferScan: true));
 
             // 3. Incremental scanning loop — scan batches and swap the document
             //    so the user can scroll further with each pass.
