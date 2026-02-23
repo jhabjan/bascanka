@@ -115,9 +115,16 @@ public sealed class SelectionManager
     /// </summary>
     public void StartSelection(long offset)
     {
+        if (!_isColumnMode &&
+            _anchorOffset == offset &&
+            _selectionStart == offset &&
+            _selectionEnd == offset)
+            return;
+
         _anchorOffset = offset;
         _selectionStart = offset;
         _selectionEnd = offset;
+        _isColumnMode = false;
         SelectionChanged?.Invoke();
     }
 
@@ -132,17 +139,25 @@ public sealed class SelectionManager
             return;
         }
 
+        long newStart;
+        long newEnd;
         if (offset < _anchorOffset)
         {
-            _selectionStart = offset;
-            _selectionEnd = _anchorOffset;
+            newStart = offset;
+            newEnd = _anchorOffset;
         }
         else
         {
-            _selectionStart = _anchorOffset;
-            _selectionEnd = offset;
+            newStart = _anchorOffset;
+            newEnd = offset;
         }
 
+        if (!_isColumnMode && _selectionStart == newStart && _selectionEnd == newEnd)
+            return;
+
+        _isColumnMode = false;
+        _selectionStart = newStart;
+        _selectionEnd = newEnd;
         SelectionChanged?.Invoke();
     }
 
@@ -283,6 +298,11 @@ public sealed class SelectionManager
     /// </summary>
     public void StartColumnSelection(long line, long column)
     {
+        if (_isColumnMode &&
+            _colAnchorLine == line && _colAnchorCol == column &&
+            _colActiveLine == line && _colActiveCol == column)
+            return;
+
         _isColumnMode = true;
         _colAnchorLine = line;
         _colAnchorCol = column;
@@ -301,6 +321,7 @@ public sealed class SelectionManager
     public void ExtendColumnSelection(long line, long column)
     {
         if (!_isColumnMode) return;
+        if (_colActiveLine == line && _colActiveCol == column) return;
         _colActiveLine = line;
         _colActiveCol = column;
         SelectionChanged?.Invoke();

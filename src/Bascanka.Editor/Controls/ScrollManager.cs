@@ -65,6 +65,9 @@ public sealed class ScrollManager
     /// <summary>The horizontal scrollbar control, if attached.</summary>
     public HScrollBar? HorizontalScrollbar { get; private set; }
 
+    /// <summary>Pixels per horizontal scroll click (set to CharWidth for 1-character scrolling).</summary>
+    public int HorizontalSmallChange { get; set; } = 8;
+
     // ────────────────────────────────────────────────────────────────────
     //  Setup
     // ────────────────────────────────────────────────────────────────────
@@ -93,8 +96,8 @@ public sealed class ScrollManager
         if (HorizontalScrollbar is not null)
         {
             HorizontalScrollbar.Scroll += OnHorizontalScroll;
-            HorizontalScrollbar.SmallChange = 1;
-            HorizontalScrollbar.LargeChange = 10;
+            HorizontalScrollbar.SmallChange = HorizontalSmallChange;
+            HorizontalScrollbar.LargeChange = Math.Max(1, _visibleColumns);
         }
     }
 
@@ -102,9 +105,9 @@ public sealed class ScrollManager
     /// Updates the scrollbar ranges based on current document metrics.
     /// </summary>
     /// <param name="totalLines">Total number of lines in the document.</param>
-    /// <param name="maxLineWidth">Width of the longest line in characters.</param>
+    /// <param name="maxLineWidth">Pixel width of the longest visible line.</param>
     /// <param name="visibleLines">Number of lines visible in the viewport.</param>
-    /// <param name="visibleColumns">Number of columns visible in the viewport.</param>
+    /// <param name="visibleColumns">Viewport width in pixels.</param>
     public void UpdateScrollBars(long totalLines, int maxLineWidth, int visibleLines, int visibleColumns)
     {
         _totalLines = totalLines;

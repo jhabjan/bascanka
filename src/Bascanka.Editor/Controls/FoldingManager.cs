@@ -320,9 +320,12 @@ public sealed class FoldingManager
     {
         var regions = new List<FoldRegion>();
 
-        bool useBraces = IsBraceLanguage(languageId);
-
-        if (useBraces)
+        if (string.Equals(languageId, "html", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(languageId, "xhtml", StringComparison.OrdinalIgnoreCase))
+        {
+            DetectHtmlScriptStyleBraceRegions(buffer, regions);
+        }
+        else if (IsBraceLanguage(languageId))
         {
             DetectBraceRegions(buffer, regions);
         }
@@ -361,6 +364,177 @@ public sealed class FoldingManager
                         regions.Add(new FoldRegion(startLine, line));
                     }
                 }
+            }
+        }
+    }
+
+    private static void DetectHtmlScriptStyleBraceRegions(PieceTable buffer, List<FoldRegion> regions)
+    {
+        long lineCount = buffer.LineCount;
+        var braceStack = new Stack<long>();
+        var tagStack = new Stack<(string Name, long Line)>();
+        bool inScript = false;
+        bool inStyle = false;
+        bool inComment = false;
+
+        static bool IsVoidTag(string name) => name is
+            "area" or "base" or "br" or "col" or "embed" or "hr" or "img" or
+            "input" or "link" or "meta" or "param" or "source" or "track" or "wbr";
+
+        for (long line = 0; line < lineCount; line++)
+        {
+            string text = buffer.GetLine(line);
+            string lower = text.ToLowerInvariant();
+
+            // Scan for HTML tags to build fold regions.
+            for (int i = 0; i < lower.Length; i++)
+            {
+                if (!inComment && i + 3 < lower.Length && lower[i] == '<' && lower[i + 1] == '!' &&
+                    lower[i + 2] == '-' && lower[i + 3] == '-')
+                {
+                    inComment = true;
+                    int endIdx = lower.IndexOf("-->", i + 4, StringComparison.Ordinal);
+                    if (endIdx >= 0)
+                    {
+                        inComment = false;
+                        i = endIdx + 2;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                    continue;
+                }
+
+                if (inComment)
+                {
+                    int endIdx = lower.IndexOf("-->", i, StringComparison.Ordinal);
+                    if (endIdx >= 0)
+                    {
+                        inComment = false;
+                        i = endIdx + 2;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                    continue;
+                }
+
+                if (lower[i] != '<')
+                    continue;
+
+                int tagStart = i;
+                i++;
+                if (i >= lower.Length)
+                    break;
+
+                bool closing = false;
+                if (lower[i] == '/')
+                {
+                    closing = true;
+                    i++;
+                }
+
+                int nameStart = i;
+                while (i < lower.Length && (char.IsLetterOrDigit(lower[i]) || lower[i] == '-' || lower[i] == ':'))
+                    i++;
+                if (i <= nameStart)
+                    continue;
+
+                string tagName = lower.Substring(nameStart, i - nameStart);
+
+                int tagEnd = lower.IndexOf('>', i);
+                if (tagEnd < 0)
+                    break;
+
+                bool selfClosing = false;
+                for (int j = tagEnd - 1; j > tagStart; j--)
+                {
+                    char c = lower[j];
+                    if (char.IsWhiteSpace(c))
+                        continue;
+                    selfClosing = c == '/';
+                    break;
+                }
+
+                if (!closing)
+                {
+                    if (!selfClosing && !IsVoidTag(tagName))
+                        tagStack.Push((tagName, line));
+                }
+                else
+                {
+                    if (tagStack.Count > 0)
+                    {
+                        (string Name, long Line) match = default;
+                        bool found = false;
+                        foreach (var entry in tagStack)
+                        {
+                            if (entry.Name == tagName)
+                            {
+                                match = entry;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found)
+                        {
+                            while (tagStack.Count > 0)
+                            {
+                                var popped = tagStack.Pop();
+                                if (popped.Name == tagName)
+                                    break;
+                            }
+                            if (line > match.Line)
+                                regions.Add(new FoldRegion(match.Line, line));
+                        }
+                    }
+                }
+
+                i = tagEnd;
+            }
+
+            if (!inScript && !inStyle)
+            {
+                if (lower.Contains("<script"))
+                {
+                    inScript = true;
+                }
+                else if (lower.Contains("<style"))
+                {
+                    inStyle = true;
+                }
+            }
+
+            if (inScript || inStyle)
+            {
+                for (int i = 0; i < text.Length; i++)
+                {
+                    char c = text[i];
+                    if (c == '{')
+                    {
+                        braceStack.Push(line);
+                    }
+                    else if (c == '}' && braceStack.Count > 0)
+                    {
+                        long startLine = braceStack.Pop();
+                        if (line > startLine)
+                            regions.Add(new FoldRegion(startLine, line));
+                    }
+                }
+            }
+
+            if (inScript && lower.Contains("</script"))
+            {
+                inScript = false;
+                braceStack.Clear();
+            }
+
+            if (inStyle && lower.Contains("</style"))
+            {
+                inStyle = false;
+                braceStack.Clear();
             }
         }
     }

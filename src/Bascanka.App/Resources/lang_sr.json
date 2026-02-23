@@ -71,12 +71,14 @@
     "MenuFullScreen": "&Цео екран",
     "MenuSymbolList": "Листа &симбола",
     "MenuFindResults": "Резултати &претраживања",
+    "MenuTerminal": "&Терминал",
     "MenuFolding": "С&авијање",
     "MenuToggleFold": "Преклопи &савијање",
     "MenuFoldAll": "Савиј св&е",
     "MenuUnfoldAll": "&Рашири све",
 
     "MenuEncoding": "&Кодирање",
+    "MenuEncodingChineseGB18030": "Кинески (GB18030)",
     "MenuConvertLineEndings": "Претвори &завршетке редова",
 
     "MenuTools": "&Алати",
@@ -118,6 +120,7 @@
     "ErrorFileNotFound": "Датотека није пронађена: {0}",
     "ErrorOpeningFile": "Грешка при отварању датотеке \"{0}\": {1}",
     "ErrorSavingFile": "Грешка при чувању датотеке \"{0}\": {1}",
+    "FileStillLoading": "Датотека се још учитава. Сачекајте завршетак учитавања пре чувања.",
     "ErrorNoDocumentOpen": "Ниједан документ није отворен.",
     "ErrorUnhandledException": "Дошло је до неочекиване грешке: {0}\n\nДетаљи:\n{1}",
     "ErrorCompilingScript": "Компилација скрипте додатка није успела.",
@@ -163,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "MB",
     "SettingsFoldingMaxFileSize": "Макс. величина за савијање",
     "SettingsFoldingMaxFileSizeUnit": "MB",
+    "SettingsWordWrapMaxFileSize": "Макс. величина за преламање текста",
+    "SettingsWordWrapMaxFileSizeUnit": "MB",
     "SettingsMaxRecentFiles": "Макс. недавних датотека",
     "SettingsSearchHistoryLimit": "Ограничење историје претраживања",
 
@@ -232,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "Датотеке изнад ове величине користе меморијско мапирање за перформансе.",
     "SettingsFoldingMaxFileSizeDesc": "Савијање кода онемогућено је за датотеке веће од овог.",
+    "SettingsWordWrapMaxFileSizeDesc": "Преламање текста онемогућено је за датотеке веће од овог.",
     "SettingsMaxRecentFilesDesc": "Максималан број уноса у листи недавних датотека.",
     "SettingsSearchHistoryLimitDesc": "Максималан број сачуваних појмова претраживања.",
     "SettingsSearchDebounceDesc": "Одлагање пре покретања претраживања уживо након куцања.",

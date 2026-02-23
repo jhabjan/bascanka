@@ -37,6 +37,8 @@ public sealed class LightTheme : ITheme
         TokenType.MarkdownItalic    => ColorTranslator.FromHtml("#000000"),
         TokenType.MarkdownCode      => ColorTranslator.FromHtml("#A31515"),
         TokenType.MarkdownLink      => ColorTranslator.FromHtml("#267F99"),
+        TokenType.JsonKey           => ColorTranslator.FromHtml("#0451A5"),
+        TokenType.JsonString        => ColorTranslator.FromHtml("#C2185B"),
         _                           => EditorForeground,
     };
 

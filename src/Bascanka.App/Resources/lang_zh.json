@@ -71,12 +71,14 @@
     "MenuFullScreen": "全屏(&F)",
     "MenuSymbolList": "符号列表(&S)",
     "MenuFindResults": "查找结果(&R)",
+    "MenuTerminal": "终端(&T)",
     "MenuFolding": "折叠(&F)",
     "MenuToggleFold": "切换折叠(&F)",
     "MenuFoldAll": "全部折叠(&L)",
     "MenuUnfoldAll": "全部展开(&U)",
 
     "MenuEncoding": "编码(&N)",
+    "MenuEncodingChineseGB18030": "中文 (GB18030)",
     "MenuConvertLineEndings": "转换行结束符(&L)",
 
     "MenuTools": "工具(&T)",
@@ -118,6 +120,7 @@
     "ErrorFileNotFound": "文件未找到: {0}",
     "ErrorOpeningFile": "打开文件 \"{0}\" 时出错: {1}",
     "ErrorSavingFile": "保存文件 \"{0}\" 时出错: {1}",
+    "FileStillLoading": "文件仍在加载中，请等待加载完成后再保存。",
     "ErrorNoDocumentOpen": "当前没有打开的文档。",
     "ErrorUnhandledException": "发生意外错误: {0}\n\n详细信息:\n{1}",
     "ErrorCompilingScript": "编译脚本插件失败。",
@@ -163,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "MB",
     "SettingsFoldingMaxFileSize": "折叠最大文件大小",
     "SettingsFoldingMaxFileSizeUnit": "MB",
+    "SettingsWordWrapMaxFileSize": "自动换行最大文件大小",
+    "SettingsWordWrapMaxFileSizeUnit": "MB",
     "SettingsMaxRecentFiles": "最大最近文件数",
     "SettingsSearchHistoryLimit": "搜索历史限制",
 
@@ -232,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "超过此大小的文件使用内存映射 I/O 以提高性能。",
     "SettingsFoldingMaxFileSizeDesc": "对于大于此大小的文件，代码折叠被禁用。",
+    "SettingsWordWrapMaxFileSizeDesc": "对于大于此大小的文件，自动换行被禁用。",
     "SettingsMaxRecentFilesDesc": "打开最近列表中的最大条目数。",
     "SettingsSearchHistoryLimitDesc": "查找面板中保存的最大搜索词数。",
     "SettingsSearchDebounceDesc": "键入后实时搜索开始前的延迟。",

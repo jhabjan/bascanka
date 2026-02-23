@@ -330,6 +330,8 @@ public sealed class StatusBarManager
             form.SetEncoding(System.Text.Encoding.GetEncoding(1252), false)));
         menu.Items.Add(MakeCheckedPopupItem("ISO-8859-1", currentEncoding, () =>
             form.SetEncoding(System.Text.Encoding.GetEncoding("iso-8859-1"), false)));
+        menu.Items.Add(MakeCheckedPopupItem(Strings.MenuEncodingChineseGB18030, currentEncoding, () =>
+            form.SetEncoding(System.Text.Encoding.GetEncoding("GB18030"), false)));
 
         ShowPopupAboveLabel(_encodingLabel, menu);
     }
@@ -421,7 +423,12 @@ public sealed class StatusBarManager
         if (name == "UTF-16BE")
             return "UTF-16 BE";
 
-        return name;
+        return name switch
+        {
+            "GB2312" => Strings.MenuEncodingChineseGB18030,
+            "GB18030" => Strings.MenuEncodingChineseGB18030,
+            _ => name,
+        };
     }
 
     private static string FormatLanguageName(string languageId)

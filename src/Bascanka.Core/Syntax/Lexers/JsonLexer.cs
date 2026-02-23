@@ -25,7 +25,15 @@ public sealed class JsonLexer : BaseLexer
         // Strings.
         if (c == '"')
         {
-            ReadJsonString(line, ref pos, tokens);
+            int start = pos;
+            ReadJsonString(line, ref pos);
+
+            int scan = pos;
+            while (scan < line.Length && char.IsWhiteSpace(line[scan]))
+                scan++;
+
+            bool isKey = scan < line.Length && line[scan] == ':';
+            tokens.Add(new Token(start, pos - start, isKey ? TokenType.JsonKey : TokenType.JsonString));
             return state;
         }
 
@@ -88,9 +96,8 @@ public sealed class JsonLexer : BaseLexer
         return state;
     }
 
-    private static void ReadJsonString(string line, ref int pos, List<Token> tokens)
+    private static void ReadJsonString(string line, ref int pos)
     {
-        int start = pos;
         pos++; // skip opening quote
 
         while (pos < line.Length)
@@ -110,6 +117,5 @@ public sealed class JsonLexer : BaseLexer
             }
         }
 
-        tokens.Add(new Token(start, pos - start, TokenType.String));
     }
 }

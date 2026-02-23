@@ -78,6 +78,7 @@
     "MenuUnfoldAll": "&Ra\u0161iri sve",
 
     "MenuEncoding": "&Kodiranje",
+    "MenuEncodingChineseGB18030": "Kineski (GB18030)",
     "MenuConvertLineEndings": "Pretvori &zavr\u0161etke redaka",
 
     "MenuTools": "&Alati",
@@ -165,6 +166,8 @@
     "SettingsLargeFileThresholdUnit": "MB",
     "SettingsFoldingMaxFileSize": "Maks. veličina za savijanje",
     "SettingsFoldingMaxFileSizeUnit": "MB",
+    "SettingsWordWrapMaxFileSize": "Maks. veličina za prelamanje teksta",
+    "SettingsWordWrapMaxFileSizeUnit": "MB",
     "SettingsMaxRecentFiles": "Maks. nedavnih datoteka",
     "SettingsSearchHistoryLimit": "Ograničenje povijesti pretraživanja",
 
@@ -234,6 +237,7 @@
 
     "SettingsLargeFileThresholdDesc": "Datoteke iznad ove veličine koriste memorijsko mapiranje za performanse.",
     "SettingsFoldingMaxFileSizeDesc": "Savijanje koda onemogućeno je za datoteke veće od ovoga.",
+    "SettingsWordWrapMaxFileSizeDesc": "Prelamanje teksta onemogućeno je za datoteke veće od ovoga.",
     "SettingsMaxRecentFilesDesc": "Maksimalan broj unosa u popisu nedavnih datoteka.",
     "SettingsSearchHistoryLimitDesc": "Maksimalan broj spremljenih pojmova pretraživanja.",
     "SettingsSearchDebounceDesc": "Odgoda prije pokretanja pretraživanja uživo nakon tipkanja.",
@@ -357,6 +361,24 @@
     "CustomHighlightImportSuccess": "{0} profil(a) uspješno uvezeno.",
     "CustomHighlightImportError": "Odabrana datoteka ne sadrži valjane profile isticanja.",
     "CustomHighlightPickColor": "Odaberi boju...",
-    "CustomHighlightClearColor": "Ukloni boju"
+    "CustomHighlightClearColor": "Ukloni boju",
+
+    "BinaryFileDetected": "Datoteka \"{0}\" je binarna datoteka.\nKako je \u017eelite otvoriti?",
+    "BinaryOpenAsHex": "Otvori kao Hex",
+    "BinaryOpenAsText": "Otvori kao tekst",
+    "BinaryRememberForExt": "Zapamti za ovu ekstenziju ({0})",
+    "BinaryRememberNoExt": "Zapamti za datoteke bez ekstenzije",
+    "BinaryFileTooLargeForHex": "Datoteka je prevelika ({0} MB) za hex prikaz.",
+
+    "SettingsCategoryFiles": "Datoteke",
+    "SettingsBinaryExtPrefs": "Postavke binarnih datoteka",
+    "SettingsBinaryExtPrefsDesc": "Spremljene postavke po ekstenziji za na\u010din otvaranja binarnih datoteka. Dvokliknite stupac za promjenu.",
+    "SettingsBinaryExtColExt": "Ekstenzija",
+    "SettingsBinaryExtColMode": "Na\u010din otvaranja",
+    "SettingsBinaryExtModeHex": "Hex editor",
+    "SettingsBinaryExtModeText": "Tekstualni editor",
+    "SettingsBinaryExtDelete": "Obri\u0161i",
+    "SettingsBinaryExtClearAll": "Obri\u0161i sve",
+    "SettingsBinaryExtClearConfirm": "Jeste li sigurni da \u017eelite obrisati sve postavke ekstenzija binarnih datoteka?"
   }
 }

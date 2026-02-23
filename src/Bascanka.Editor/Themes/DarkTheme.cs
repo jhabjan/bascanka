@@ -37,6 +37,8 @@ public sealed class DarkTheme : ITheme
         TokenType.MarkdownItalic    => ColorTranslator.FromHtml("#569CD6"),
         TokenType.MarkdownCode      => ColorTranslator.FromHtml("#CE9178"),
         TokenType.MarkdownLink      => ColorTranslator.FromHtml("#4EC9B0"),
+        TokenType.JsonKey           => ColorTranslator.FromHtml("#9CDCFE"),
+        TokenType.JsonString        => ColorTranslator.FromHtml("#FF8AD8"),
         _                           => EditorForeground,
     };
 

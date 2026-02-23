@@ -11,7 +11,7 @@
     <AssemblyName>Bascanka</AssemblyName>
     <RootNamespace>Bascanka.App</RootNamespace>
     <Copyright>© 2026 Josip Habjan. All rights reserved.</Copyright>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <None Remove="Resources\AppxManifest.xml.template" />
@@ -40,6 +40,7 @@
     <EmbeddedResource Include="Resources\lang_hr.json" />
     <EmbeddedResource Include="Resources\lang_sr.json" />
     <EmbeddedResource Include="Resources\lang_zh.json" />
+    <EmbeddedResource Include="Resources\lang_ru.json" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Bascanka.Core\Bascanka.Core.csproj" />

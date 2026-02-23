@@ -14,66 +14,42 @@ Bascanka focuses on efficient resource usage and fast text processing while main
 
 ## Downloads
 
-### 📦 Bascanka v.1.0.3
+### 📦 Bascanka v.1.0.5 - 2026-02-23
 
 #### Release notes
 
-v.1.0.3.		2025-02-18
---------------------------
-- implemented embedded terminal (cmd.exe) to the bottom panel using the Windows ConPTY API.
-- added close/crash unsaved changes recovery with periodic automatic back-ups to "%AppData%\Bascanka\recovery" - small/untitled files are backed up in full size as UTF-8, while large memory-mapped files use efficient binary delta/changes-only save format.
-- fixed emoji and special character rendering, cursor positioning, selection, and caret navigation - including surrogate pairs, ZWJ sequences and variation selectors.
-- lines containing wide or special characters are now rendered character-by-character to prevent GDI font fallback from causing cursor drift.
-- improved Unicode character support.
-- implemented a pending-delta mechanism for the line offset cache — consecutive same-line edits accumulate a virtual shift in O(1) instead of triggering an O(N) full-document rescan.
-- added double-click on empty tab bar area to create a new untitled document.
-- added tabbed bottom panel - Find Results and Terminal now share a tabbed bottom panel.
-- fixed search history not being saved correctly.
-- added Modern Windows Context Menu registration from Settings ("Edit with Bascanka"), with automatic sparse package and COM shell extension setup.
-- only one Bascanka instance now runs at a time - opening files while it's running forwards them to the existing window via named pipes.
+- horizontal scrolling and text measurement converted from cell-based to pixel-based (layout, scrollbar range, caret, and wrapping now use real pixels instead of fixed cells, enabling correct mixed-width rendering CJK, emoji, tabs, Latin).
+- fixed horizontal scrollbar range not covering full line width - EstimateMaxLinePixelWidth now checks all lines by length (O(1) via cached offsets) and measures top 10 longest, not just visible lines.
+- fixed cursor stuck on WrapMoveDown - now uses current column instead of sticky desired column (matches WrapMoveUp).
+- fixed sub-character pixel offset at max horizontal scroll - added one MaxCharPixelWidth padding to scrollbar range.
+- fixed caret not visible at end of long lines - ColumnToPixelOffset maps columns via ExpandedColumn for tabbed lines.
+- word wrap is now automatically disabled for files over a configurable size limit (default 50 MB), with a new setting and localized labels.
+- fixed an HTML lexer edge case that could spin in a loop on certain attributes, preventing UI hangs while scrolling.
+- html inline CSS/JavaScript highlighting and folding is now supported within <style> and <script> blocks.
+- json highlighting now distinguishes keys from string values with improved, more vivid colors for clearer readability.
+- improved typing latency on huge single-line documents.
+- improved scrolling performance on ultra-long lines.
+- session persistence is now driven entirely by recovery\manifest.json, eliminating the duplicate session.json.
+- find/replace search history now saves to search-history.json and loads at startup.
+- the Chinese encoding option has been updated to GB18030 and renamed to "Chinese (GB18030)" across menus and localized strings.
+- fixed CJK opening punctuation (《「『【 etc.) rendering issue - rendered now flush against the following character inside double-width cells, matching other CJK editors.
+- the encoding detector now heuristically prefers GB18030 when UTF-8 decoding shows replacement characters, improving auto‑detection for CJK files.
 
 ---
 
 - **Framework-dependent (small download - requires .NET 10 runtime)**  
   Single portable EXE (~2 MB). Use this if .NET 10 is already installed on your system.  
-  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.3.bin.zip  
-  **SHA256:** `55991BCEE3A63503E26FD9A01B89EA69C9088877D4E2AE1D8E173526139F9F0A`
+  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.5.bin.zip  
+  **SHA256:** `8EF1697027477196248E9CD7C4DF25307A6E2C44EAEA1C6AC392262C1816F4CC`
 
 - **Self-contained (no runtime required)**  
   Single portable EXE with .NET 10 included (~120 MB). Works on any supported Windows machine without installing .NET.  
-  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.3.bin.sc.zip  
-  **SHA256:** `55991BCEE3A63503E26FD9A01B89EA69C9088877D4E2AE1D8E173526139F9F0A`
+  👉 https://beegoesmoo.co.uk/bascanka/download/Bascanka.v.1.0.5.bin.sc.zip  
+  **SHA256:** `00EB8943696753C9387471C18024F66D2CF9BD136DF657D19F0A3933EAD17043`
 
 All builds are portable - no installation required.
 
-### 📦 Bascanka v.1.0.2
-
-#### Release notes
-- added CJK / Unicode Character Support - Fixed cursor positioning for CJK (Chinese, Japanese, Korean) and other fullwidth characters. The caret, selection highlights, search highlights, and all   other visual elements now align correctly with double-width characters.
-- added GB2312 encoding and support for detecting GB2312 when opening files.
-- added the ability to compare opened tabs text via the tab right-click context menu.
-- added a per-tab progress bar when saving large files, allowing users to continue working on other tabs while a file is being saved.
-- added system theme detection feature.
-- added Chinese UI localization.
-- added Serbian (Cyrillic) UI localization.
-- fixed arrow key navigation to skip over surrogate pairs as a single unit instead of requiring two key presses per supplementary character.
-- fixed box/column selection losing column mode when starting with Delete or Backspace, so it now stays in column mode for continued editing.
-- fixed performance issue when editing large files and jumping + making changes between beginning and end of the file.
-- extended the About window to include contributors and release notes.
-
-### 📦 Bascanka v.1.0.1
-
-#### Release notes
-- added Side-by-side file comparison. Available from Tools > Compare Files.
-- added Sed Transform / Unix sed-style substitution with live preview. Available from Tools > Sed Transform.
-- added Custom Highlighting + Folding / User-defined regex-based highlighting + folding profiles
-- added COBOL Lexer / language support.
-- added persistence for window position, size, maximized state and opened tabs.
-- extended to be fully customizable via Tools > Settings (theme colors, fonts, text rendering engine limits, etc).
-- introduced a --reset (-r) command-line parameter for bascanka.exe, allowing users to clear the session state and start with a fresh instance
-- other small bug fixes
-
-All builds are portable - no installation required.
+---
 
 <p align="center">
   <a href="https://raw.githubusercontent.com/jhabjan/bascanka/refs/heads/main/docs/resources/screen_main_2.png" target="_blank">
@@ -151,6 +127,19 @@ dotnet publish "src\Bascanka.App\Bascanka.App.csproj" -c Release -r win-x64 -p:P
 ```
 dotnet publish "src\Bascanka.App\Bascanka.App.csproj" -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=false
 ```
+
+##### Consider adding `-p:PublishReadyToRun=true`
+
+`PublishReadyToRun=true` precompiles much of your app’s IL into native code **during publish**.
+That means the app does **less JIT compilation at startup** and when code runs for the first time, so you typically get:
+
+- **Faster startup time** (often noticeable for WinForms apps)
+- **Less CPU spike on first launch / first UI actions**
+- **No trimming / reflection compatibility issues** (unlike Native AOT)
+
+Trade-offs:
+- Publish output is **larger** (often +10–30%)
+- Publish can take a bit longer
 
 ## Run
 

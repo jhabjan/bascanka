@@ -12,8 +12,8 @@ namespace Bascanka.App;
 
 /// <summary>
 /// Silently writes document state to disk every 10 seconds, enabling full
-/// workspace restoration after a crash or abnormal exit. Recovery data is
-/// stored in <c>%AppData%\Bascanka\recovery\</c> and deleted on normal shutdown.
+/// workspace restoration across launches and after crashes. Recovery data is
+/// stored in <c>%AppData%\Bascanka\recovery\</c>.
 /// </summary>
 public sealed class RecoveryManager : IDisposable
 {
@@ -84,9 +84,22 @@ public sealed class RecoveryManager : IDisposable
     }
 
     /// <summary>
-    /// Deletes the entire recovery directory. Called on normal shutdown.
+    /// Deletes the entire recovery directory (manifest + content files).
     /// </summary>
     public void CleanUp()
+    {
+        ClearRecoveryData();
+    }
+
+    /// <summary>
+    /// Returns true if a recovery manifest exists from a previous session.
+    /// </summary>
+    public static bool HasRecoveryData() => File.Exists(ManifestPath);
+
+    /// <summary>
+    /// Deletes recovery data (manifest + content files). Used by reset flows.
+    /// </summary>
+    public static void ClearRecoveryData()
     {
         try
         {
@@ -96,18 +109,12 @@ public sealed class RecoveryManager : IDisposable
         catch { /* best effort */ }
     }
 
-    /// <summary>
-    /// Returns true if a recovery manifest exists from a previous session.
-    /// </summary>
-    public static bool HasRecoveryData() => File.Exists(ManifestPath);
-
     // ── Timer tick ───────────────────────────────────────────────────
 
     private void OnTimerTick(object? sender, EventArgs e)
     {
         if (_saving) return;
         var tabs = _form.Tabs;
-        if (tabs.Count == 0) return;
 
         _saving = true;
         try
@@ -237,6 +244,18 @@ public sealed class RecoveryManager : IDisposable
                     entry["Language"] = tab.PendingLanguage;
                 if (tab.PendingCustomProfileName is not null)
                     entry["CustomProfileName"] = tab.PendingCustomProfileName;
+
+                // Preserve recovery format/encoding metadata for deferred
+                // modified tabs so that re-saving the manifest doesn't lose
+                // the info needed to restore unsaved changes on next launch.
+                if (tab.PendingRecoveryFormat is not null)
+                {
+                    entry["Format"] = tab.PendingRecoveryFormat;
+                    entry["EncodingCodePage"] = tab.PendingEncodingCodePage;
+                    entry["HasBom"] = tab.PendingHasBom;
+                    if (tab.PendingLineEnding is not null)
+                        entry["LineEnding"] = tab.PendingLineEnding;
+                }
             }
             else
             {
@@ -248,7 +267,7 @@ public sealed class RecoveryManager : IDisposable
                 if (tab.Editor.WordWrap)
                     entry["WordWrap"] = 1;
 
-                string? customProfile = tab.Editor.CustomProfileName;
+                string? customProfile = tab.Editor.CustomProfileName ?? tab.SelectedCustomProfileName;
                 if (customProfile is not null)
                     entry["CustomProfileName"] = customProfile;
 
@@ -266,7 +285,10 @@ public sealed class RecoveryManager : IDisposable
             }
 
             // For piece-format recovery, store original file metadata for validation.
-            if (tab.IsModified && tab.Editor.IsMemoryMappedDocument && tab.FilePath is not null)
+            bool hasRecoveryPieces = tab.IsModified &&
+                ((tab.IsDeferredLoad && tab.PendingRecoveryFormat == "pieces") ||
+                 (!tab.IsDeferredLoad && tab.Editor.IsMemoryMappedDocument));
+            if (hasRecoveryPieces && tab.FilePath is not null)
             {
                 try
                 {
@@ -287,14 +309,10 @@ public sealed class RecoveryManager : IDisposable
         bool maximized = _form.WindowState == FormWindowState.Maximized;
         var bounds = maximized ? _form.RestoreBounds : _form.Bounds;
 
-        // Search history.
-        var history = Bascanka.Editor.Panels.FindReplacePanel.GetSearchHistory();
-
         var manifest = new SortedDictionary<string, object>(StringComparer.Ordinal)
         {
             ["Version"] = 1,
             ["ActiveTab"] = _form.ActiveTabIndex,
-            ["SearchHistory"] = history.ToArray(),
             ["Tabs"] = tabEntries,
             ["WindowHeight"] = bounds.Height,
             ["WindowMaximized"] = maximized ? 1 : 0,
@@ -351,9 +369,6 @@ public sealed class RecoveryManager : IDisposable
             // Restore window geometry.
             RestoreWindowGeometry(root);
 
-            // Restore search history.
-            RestoreSearchHistory(root);
-
             // Restore tabs.
             if (!root.TryGetProperty("Tabs", out var tabsEl) || tabsEl.ValueKind != JsonValueKind.Array)
                 return false;
@@ -396,6 +411,25 @@ public sealed class RecoveryManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Restores only the saved window geometry from the recovery manifest.
+    /// Intended to be called before the form is shown.
+    /// </summary>
+    public void RestoreWindowState()
+    {
+        try
+        {
+            if (!File.Exists(ManifestPath)) return;
+            string json = File.ReadAllText(ManifestPath);
+            using var doc = JsonDocument.Parse(json);
+            RestoreWindowGeometry(doc.RootElement);
+        }
+        catch
+        {
+            // Silently ignore — keep default window position.
+        }
+    }
+
     private bool RestoreTab(JsonElement tabEl, out bool isActive)
     {
         isActive = false;
@@ -416,11 +450,50 @@ public sealed class RecoveryManager : IDisposable
         // Deferred tabs — restore as deferred if file exists.
         if (isDeferred && path is not null && File.Exists(path))
         {
+            // Deferred tab with recovery data (modified large file) — re-defer
+            // with recovery metadata so loading happens only when activated.
+            if (isModified && format == "pieces")
+            {
+                Guid? recTabId = Guid.TryParse(idStr, out var parsed) ? parsed : null;
+                string recContentPath = Path.Combine(RecoveryDir, $"{recTabId}.content");
+                if (File.Exists(recContentPath))
+                {
+                    var (addBuffer, pieces) = ReadPiecesFile(recContentPath);
+                    if (addBuffer is not null && pieces is not null)
+                    {
+                        int codePage = GetInt(tabEl, "EncodingCodePage", 65001);
+                        bool hasBom = GetBool(tabEl, "HasBom");
+                        string? lineEnding = GetString(tabEl, "LineEnding");
+                        string? language = GetString(tabEl, "Language");
+                        string? customProfile = GetString(tabEl, "CustomProfileName");
+                        long caret2 = GetLong(tabEl, "Caret", 0);
+                        int scroll2 = GetInt(tabEl, "Scroll", 0);
+                        int zoom2 = GetInt(tabEl, "Zoom", 0);
+                        bool wordWrap2 = GetInt(tabEl, "WordWrap", 0) != 0;
+
+                        _form.AddDeferredRecoveryLargeTab(
+                            path, addBuffer, pieces,
+                            codePage, hasBom, lineEnding, language,
+                            caret2, scroll2, zoom2, recTabId, wordWrap2, customProfile);
+                        return true;
+                    }
+                }
+            }
+
             int zoom = GetInt(tabEl, "Zoom", 0);
             int scroll = GetInt(tabEl, "Scroll", 0);
             long caret = GetLong(tabEl, "Caret", 0);
             bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
+            string? pendingLanguage = GetString(tabEl, "Language");
+            string? pendingCustomProfile = GetString(tabEl, "CustomProfileName");
+
             _form.AddDeferredTab(path, zoom, scroll, (int)Math.Min(caret, int.MaxValue), wordWrap);
+
+            // Apply pending language/custom profile to the deferred tab.
+            var tab = _form.Tabs[_form.Tabs.Count - 1];
+            tab.PendingLanguage = pendingLanguage;
+            tab.PendingCustomProfileName = pendingCustomProfile;
+            tab.SelectedCustomProfileName = pendingCustomProfile;
             return true;
         }
 
@@ -433,9 +506,17 @@ public sealed class RecoveryManager : IDisposable
                 int scroll = GetInt(tabEl, "Scroll", 0);
                 long caret = GetLong(tabEl, "Caret", 0);
                 bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
+                string? pendingLanguage = GetString(tabEl, "Language");
+                string? pendingCustomProfile = GetString(tabEl, "CustomProfileName");
 
                 // Use deferred loading for non-active tabs.
                 _form.AddDeferredTab(path, zoom, scroll, (int)Math.Min(caret, int.MaxValue), wordWrap);
+
+                // Apply pending language/custom profile to the deferred tab.
+                var tab = _form.Tabs[_form.Tabs.Count - 1];
+                tab.PendingLanguage = pendingLanguage;
+                tab.PendingCustomProfileName = pendingCustomProfile;
+                tab.SelectedCustomProfileName = pendingCustomProfile;
                 return true;
             }
             return false;
@@ -591,9 +672,10 @@ public sealed class RecoveryManager : IDisposable
             int zoom = GetInt(tabEl, "Zoom", 0);
             bool wordWrap = GetInt(tabEl, "WordWrap", 0) != 0;
 
-            // Delegate to MainForm's async large-file recovery (same pattern as OpenLargeFile).
-            _form.RestoreLargeFileFromRecovery(
-                path, fi.Length, addBuffer!, pieces,
+            // Defer loading until tab is activated — avoids loading multi-GB
+            // files in the background on startup.
+            _form.AddDeferredRecoveryLargeTab(
+                path, addBuffer!, pieces,
                 codePage, hasBom, lineEnding, language,
                 caret, scroll, zoom, tabId, wordWrap, customProfile);
 
@@ -909,21 +991,6 @@ public sealed class RecoveryManager : IDisposable
         _form.Size = new System.Drawing.Size(w, h);
         if (maximized)
             _form.WindowState = FormWindowState.Maximized;
-    }
-
-    private static void RestoreSearchHistory(JsonElement root)
-    {
-        if (!root.TryGetProperty("SearchHistory", out var historyEl)) return;
-        if (historyEl.ValueKind != JsonValueKind.Array) return;
-
-        var items = new List<string>();
-        foreach (var item in historyEl.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.String)
-                items.Add(item.GetString()!);
-        }
-        if (items.Count > 0)
-            Bascanka.Editor.Panels.FindReplacePanel.SetSearchHistory(items);
     }
 
     // ── JSON helpers ─────────────────────────────────────────────────

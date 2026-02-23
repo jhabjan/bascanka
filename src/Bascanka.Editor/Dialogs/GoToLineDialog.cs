@@ -1,3 +1,5 @@
+using Bascanka.Editor.Themes;
+
 namespace Bascanka.Editor.Dialogs;
 
 /// <summary>
@@ -15,6 +17,7 @@ public class GoToLineDialog : Form
 
     // ── State ─────────────────────────────────────────────────────────
     private readonly long _maxLine;
+    private readonly ITheme _theme;
 
     /// <summary>
     /// The line number entered by the user, or <see langword="null"/> if the
@@ -37,6 +40,7 @@ public class GoToLineDialog : Form
     public GoToLineDialog(long maxLine, long currentLine = 1)
     {
         _maxLine = Math.Max(1, maxLine);
+        _theme = ThemeManager.Instance.CurrentTheme;
         LineNumber = null;
 
         // ── Form properties ───────────────────────────────────────────
@@ -46,9 +50,11 @@ public class GoToLineDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(300, 130);
+        ClientSize = new Size(300, 150);
         AcceptButton = null; // set after button creation
         KeyPreview = true;
+        BackColor = _theme.EditorBackground;
+        ForeColor = _theme.EditorForeground;
 
         // ── Prompt label ──────────────────────────────────────────────
         _promptLabel = new Label
@@ -56,6 +62,8 @@ public class GoToLineDialog : Form
             Text = "Line number:",
             Location = new Point(12, 14),
             AutoSize = true,
+            ForeColor = _theme.EditorForeground,
+            BackColor = _theme.EditorBackground,
         };
 
         // ── Range label ───────────────────────────────────────────────
@@ -64,7 +72,7 @@ public class GoToLineDialog : Form
             Text = $"(1 \u2013 {_maxLine})",
             Location = new Point(12, 66),
             AutoSize = true,
-            ForeColor = SystemColors.GrayText,
+            BackColor = _theme.EditorBackground,
         };
 
         // ── Line number text box ──────────────────────────────────────
@@ -74,6 +82,8 @@ public class GoToLineDialog : Form
             Width = 276,
             Text = currentLine.ToString(),
             MaxLength = 18, // enough for long.MaxValue
+            BackColor = _theme.FindPanelBackground,
+            ForeColor = _theme.EditorForeground,
         };
         _lineNumberBox.SelectAll();
         _lineNumberBox.KeyPress += OnLineNumberKeyPress;
@@ -84,9 +94,13 @@ public class GoToLineDialog : Form
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(132, 92),
-            Width = 75,
+            Location = new Point(132, 112),
+            Size = new Size(75, 28),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = _theme.EditorBackground,
+            ForeColor = _theme.EditorForeground,
         };
+        _btnOk.FlatAppearance.BorderColor = _theme.TabBorder;
         _btnOk.Click += OnOkClick;
 
         // ── Cancel button ─────────────────────────────────────────────
@@ -94,9 +108,13 @@ public class GoToLineDialog : Form
         {
             Text = "Cancel",
             DialogResult = DialogResult.Cancel,
-            Location = new Point(213, 92),
-            Width = 75,
+            Location = new Point(213, 112),
+            Size = new Size(75, 28),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = _theme.EditorBackground,
+            ForeColor = _theme.EditorForeground,
         };
+        _btnCancel.FlatAppearance.BorderColor = _theme.TabBorder;
 
         AcceptButton = _btnOk;
         CancelButton = _btnCancel;
@@ -134,8 +152,13 @@ public class GoToLineDialog : Form
 
         _btnOk.Enabled = isValid;
 
+        Color dimColor = Color.FromArgb(
+            (_theme.EditorForeground.R + _theme.EditorBackground.R) / 2,
+            (_theme.EditorForeground.G + _theme.EditorBackground.G) / 2,
+            (_theme.EditorForeground.B + _theme.EditorBackground.B) / 2);
+
         _rangeLabel.ForeColor = isValid || string.IsNullOrEmpty(_lineNumberBox.Text)
-            ? SystemColors.GrayText
+            ? dimColor
             : Color.IndianRed;
     }
 

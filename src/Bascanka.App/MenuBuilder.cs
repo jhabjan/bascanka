@@ -505,8 +505,8 @@ public sealed class MenuBuilder
         _encodingMenu.DropDownItems.Add(MakeItem("ISO-8859-1", Keys.None,
             () => form.SetEncoding(System.Text.Encoding.GetEncoding("iso-8859-1"), false)));
 
-        _encodingMenu.DropDownItems.Add(MakeItem("Chinese Simplified (GB2312)", Keys.None,
-            () => form.SetEncoding(System.Text.Encoding.GetEncoding("GB2312"), false)));
+        _encodingMenu.DropDownItems.Add(MakeItem(Strings.MenuEncodingChineseGB18030, Keys.None,
+            () => form.SetEncoding(System.Text.Encoding.GetEncoding("GB18030"), false)));
 
         _encodingMenu.DropDownItems.Add(new ToolStripSeparator());
 
@@ -569,7 +569,8 @@ public sealed class MenuBuilder
             "US-ASCII" => "ASCII",
             "WINDOWS-1252" => "Windows-1252",
             "ISO-8859-1" => "ISO-8859-1",
-            "GB2312" => "Chinese Simplified (GB2312)",
+            "GB2312" => "Chinese (GB18030)",
+            "GB18030" => "Chinese (GB18030)",
             _ => enc.CurrentEncoding.EncodingName,
         };
     }
@@ -755,7 +756,11 @@ public sealed class MenuBuilder
             item.Enabled = hasSelection;
 
         // View menu checkmarks.
-        if (_wordWrapItem is not null) _wordWrapItem.Checked = hasTab && editor!.WordWrap;
+        if (_wordWrapItem is not null)
+        {
+            _wordWrapItem.Checked = hasTab && editor!.WordWrap;
+            _wordWrapItem.Enabled = hasTab && form.CanToggleWordWrap;
+        }
         if (_showWhitespaceItem is not null) _showWhitespaceItem.Checked = hasTab && editor!.ShowWhitespace;
         if (_lineNumbersItem is not null) _lineNumbersItem.Checked = !hasTab || editor!.ShowLineNumbers;
 

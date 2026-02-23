@@ -14,7 +14,7 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
-        // Register the code-pages provider so that Windows-1252, ISO-8859-1, GB2312,
+        // Register the code-pages provider so that Windows-1252, ISO-8859-1, GB18030,
         // and other legacy encodings are available on all platforms.
         System.Text.Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
@@ -68,7 +68,7 @@ static class Program
                 string.Equals(arg, "--reset", StringComparison.OrdinalIgnoreCase))
             {
                 SettingsManager.ResetToDefaults();
-                SettingsManager.ClearSessionState();
+                RecoveryManager.ClearRecoveryData();
                 // Delete recent files list.
                 string recentPath = Path.Combine(
                     SettingsManager.AppDataFolder, "recent.json");

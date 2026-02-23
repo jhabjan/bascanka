@@ -91,7 +91,10 @@ public sealed class EditorControl : UserControl
     public static long FoldingMaxFileSize { get; set; } = 50_000_000;
     public static bool DefaultAutoIndent { get; set; } = true;
     public static bool DefaultWordWrap { get; set; }
-    public static int DefaultCaretScrollBuffer { get; set; } = 4;
+    /// <summary>
+    /// Horizontal scroll buffer in pixels kept between the caret and viewport edge.
+    /// </summary>
+    public static int DefaultCaretScrollBuffer { get; set; } = 32;
     public static int DefaultTextLeftPadding { get; set; } = 6;
     public static int DefaultLineSpacing { get; set; } = 2;
     public static float DefaultMinZoomFontSize { get; set; } = 6f;
@@ -102,6 +105,11 @@ public sealed class EditorControl : UserControl
     public static int DefaultFoldButtonSize { get; set; } = 10;
     public static int DefaultBookmarkSize { get; set; } = 8;
     public static int DefaultSearchDebounce { get; set; } = 300;
+    private const long LargeDocumentInteractiveThreshold = 100_000_000;
+    private const long UltraLongLineInteractiveThreshold = 1_000_000;
+    private const long FastModeSingleLineTokenizeLimit = 25_000_000;
+    private const int FastScrollUiRefreshIntervalMs = 60;
+    private const int WrapScrollRetokenizeIntervalMs = 100;
 
     // ── Extended state ──────────────────────────────────────────────────
     private Bascanka.Core.Encoding.EncodingManager? _encodingManager;
@@ -110,6 +118,9 @@ public sealed class EditorControl : UserControl
     private bool _showLineNumbers = true;
     private string _lineEnding = "CRLF";
     private int _zoomLevel;
+    private int _maxLinePixelWidthCache;
+    private long _lastFastScrollUiTick;
+    private long _lastWrapScrollRetokenizeTick;
 
     // ── Events ─────────────────────────────────────────────────────────
 
@@ -168,8 +179,13 @@ public sealed class EditorControl : UserControl
         _caretManager = new CaretManager { Document = _document };
         _caretManager.ColumnToExpandedColumn = (docLine, col) =>
         {
+            long lineLen = _document.GetLineLength(docLine);
+            int clampedCol = (int)Math.Min(Math.Max(0, col), lineLen);
+            if (lineLen > UltraLongLineInteractiveThreshold)
+                return clampedCol * _surface.CharWidth;
+
             string text = _document.GetLine(docLine);
-            return ExpandedLength(text, Math.Min(col, text.Length));
+            return _surface.ColumnToPixelOffset(text, Math.Min(clampedCol, text.Length));
         };
         _selectionManager = new SelectionManager { Document = _document };
         _scrollManager = new ScrollManager();
@@ -236,6 +252,7 @@ public sealed class EditorControl : UserControl
 
         _surface.Resize += (_, _) =>
         {
+            _surface.InvalidateWrapRowCache();
             UpdateScrollBars();
             RetokenizeAllVisible();
             if (_wordWrap)
@@ -315,6 +332,7 @@ public sealed class EditorControl : UserControl
 
             _tokenCache.Clear();
             _commandHistory.Clear();
+            _maxLinePixelWidthCache = 0;
 
             UpdateScrollBars();
             _caretManager.MoveTo(0);
@@ -464,31 +482,83 @@ public sealed class EditorControl : UserControl
             {
                 _caretManager.LineColumnToVisibleRow = (docLine, col) =>
                 {
+                    long lineLen = _document.GetLineLength(docLine);
+                    long clampedCol = Math.Clamp(col, 0, lineLen);
+
+                    // Keep caret visibility mapping consistent with ultra-long
+                    // wrap render/hit-test fast path (fixed wrap columns).
+                    if (lineLen > UltraLongLineInteractiveThreshold)
+                    {
+                        int wrapColsFast = Math.Max(1, _surface.WrapColumns);
+                        int rowsForLineFast = (int)Math.Max(1, Math.Min(int.MaxValue, (lineLen + wrapColsFast - 1) / wrapColsFast));
+                        int wrapRowFast = (int)Math.Min(int.MaxValue, clampedCol / wrapColsFast);
+                        if (clampedCol == lineLen && lineLen > 0 && lineLen % wrapColsFast == 0)
+                            wrapRowFast = Math.Max(0, wrapRowFast - 1);
+                        wrapRowFast = Math.Clamp(wrapRowFast, 0, Math.Max(0, rowsForLineFast - 1));
+                        return _surface.DocumentLineToWrapRow(docLine, wrapRowFast);
+                    }
+
                     string text = _document.GetLine(docLine);
-                    int expandedCol = ExpandedLength(text, (int)Math.Min(col, text.Length));
-                    int wrapCols = _surface.WrapColumns;
-                    int wrapRow = wrapCols > 0 ? expandedCol / wrapCols : 0;
+                    int wrapPx = _surface.WrapPixelWidth;
+                    // Find which wrap row this character column falls in.
+                    string expanded = _surface.ExpandTabsPublic(text);
+                    int charIdx = Math.Min(ExpandedLength(text, (int)Math.Min(clampedCol, text.Length)), expanded.Length);
+                    int wrapRow = 0;
+                    int px = 0;
+                    for (int i = 0; i < charIdx && i < expanded.Length; i++)
+                    {
+                        int w = EditorSurface.GetCharDisplayWidth(expanded, i);
+                        if (w == 0) continue;
+                        int cpx = _surface.CharPixelWidthPublic(expanded, i, w);
+                        if (px + cpx > wrapPx)
+                        {
+                            wrapRow++;
+                            px = cpx;
+                        }
+                        else
+                        {
+                            px += cpx;
+                        }
+                    }
                     return _surface.DocumentLineToWrapRow(docLine, wrapRow);
                 };
 
                 _caretManager.WrapMoveUp = (line, col, desiredCol) =>
                 {
                     string text = _document.GetLine(line);
-                    int wrapCols = _surface.WrapColumns;
-                    if (wrapCols <= 0) return null;
+                    int wrapPx = _surface.WrapPixelWidth;
+                    if (wrapPx <= 0) return null;
 
-                    int expandedCol = ExpandedLength(text, (int)Math.Min(col, text.Length));
-                    int wrapRow = expandedCol / wrapCols;
+                    string expanded = _surface.ExpandTabsPublic(text);
+                    int expandedCharIdx = ExpandedLength(text, (int)Math.Min(col, text.Length));
+                    var segments = _surface.GetWrapSegmentsPixelPublic(expanded, wrapPx);
+                    // Find which segment the caret is in.
+                    int wrapRow = 0;
+                    for (int s = 0; s < segments.Length; s++)
+                    {
+                        int segEnd = segments[s].Start + segments[s].Length;
+                        if (expandedCharIdx < segEnd || s == segments.Length - 1) { wrapRow = s; break; }
+                    }
 
-                    int desiredExp = ExpandedLength(text, (int)Math.Min(desiredCol, text.Length));
-                    int desiredInRow = desiredExp % wrapCols;
+                    // Use the current column (col) to compute the in-row visual offset,
+                    // not desiredCol.  desiredCol is an absolute document column that
+                    // doesn't map correctly to later wrap rows (it would produce a
+                    // negative offset, snapping to 0).
+                    int currentVisCol = VisualExpandedLength(text, (int)Math.Min(col, text.Length));
+                    int segStartVis = EditorSurface.CharIndexToVisualColumn(expanded, segments[wrapRow].Start);
+                    int desiredInRow = currentVisCol - segStartVis;
+                    if (desiredInRow < 0) desiredInRow = 0;
 
                     if (wrapRow > 0)
                     {
                         // Move to previous wrap row in same line.
-                        int targetExpCol = (wrapRow - 1) * wrapCols + desiredInRow;
-                        targetExpCol = Math.Min(targetExpCol, wrapRow * wrapCols - 1);
-                        long newCol = CompressedLength(text, targetExpCol);
+                        int prevSegStart = segments[wrapRow - 1].Start;
+                        int prevSegVisStart = EditorSurface.CharIndexToVisualColumn(expanded, prevSegStart);
+                        int targetVisCol = prevSegVisStart + desiredInRow;
+                        int prevSegVisEnd = EditorSurface.CharIndexToVisualColumn(expanded, prevSegStart + segments[wrapRow - 1].Length);
+                        targetVisCol = Math.Min(targetVisCol, prevSegVisEnd);
+                        int targetCharIdx = EditorSurface.VisualColumnToCharIndex(expanded, targetVisCol);
+                        long newCol = CompressedLength(text, targetCharIdx);
                         return (line, newCol);
                     }
                     else
@@ -500,12 +570,15 @@ public sealed class EditorControl : UserControl
                         if (prevLine < 0) return null;
 
                         string prevText = _document.GetLine(prevLine);
-                        int prevExpLen = ExpandedLength(prevText);
-                        int prevWrapRows = Math.Max(1, (prevExpLen + wrapCols - 1) / wrapCols);
-                        int lastRow = prevWrapRows - 1;
-                        int targetExpCol = lastRow * wrapCols + desiredInRow;
-                        targetExpCol = Math.Min(targetExpCol, prevExpLen);
-                        long newCol = CompressedLength(prevText, targetExpCol);
+                        string prevExpanded = _surface.ExpandTabsPublic(prevText);
+                        var prevSegments = _surface.GetWrapSegmentsPixelPublic(prevExpanded, wrapPx);
+                        int lastSeg = prevSegments.Length - 1;
+                        int lastSegVisStart = EditorSurface.CharIndexToVisualColumn(prevExpanded, prevSegments[lastSeg].Start);
+                        int targetVisCol = lastSegVisStart + desiredInRow;
+                        int lastSegVisEnd = EditorSurface.CharIndexToVisualColumn(prevExpanded, prevSegments[lastSeg].Start + prevSegments[lastSeg].Length);
+                        targetVisCol = Math.Min(targetVisCol, lastSegVisEnd);
+                        int targetCharIdx = EditorSurface.VisualColumnToCharIndex(prevExpanded, targetVisCol);
+                        long newCol = CompressedLength(prevText, targetCharIdx);
                         return (prevLine, newCol);
                     }
                 };
@@ -513,23 +586,36 @@ public sealed class EditorControl : UserControl
                 _caretManager.WrapMoveDown = (line, col, desiredCol) =>
                 {
                     string text = _document.GetLine(line);
-                    int wrapCols = _surface.WrapColumns;
-                    if (wrapCols <= 0) return null;
+                    int wrapPx = _surface.WrapPixelWidth;
+                    if (wrapPx <= 0) return null;
 
-                    int expandedCol = ExpandedLength(text, (int)Math.Min(col, text.Length));
-                    int wrapRow = expandedCol / wrapCols;
-                    int totalRows = Math.Max(1, (ExpandedLength(text) + wrapCols - 1) / wrapCols);
+                    string expanded = _surface.ExpandTabsPublic(text);
+                    int expandedCharIdx = ExpandedLength(text, (int)Math.Min(col, text.Length));
+                    var segments = _surface.GetWrapSegmentsPixelPublic(expanded, wrapPx);
+                    // Find which segment the caret is in.
+                    int wrapRow = 0;
+                    for (int s = 0; s < segments.Length; s++)
+                    {
+                        int segEnd = segments[s].Start + segments[s].Length;
+                        if (expandedCharIdx < segEnd || s == segments.Length - 1) { wrapRow = s; break; }
+                    }
+                    int totalRows = segments.Length;
 
-                    int desiredExp = ExpandedLength(text, (int)Math.Min(desiredCol, text.Length));
-                    int desiredInRow = desiredExp % wrapCols;
+                    int currentVisCol = VisualExpandedLength(text, (int)Math.Min(col, text.Length));
+                    int segStartVis = EditorSurface.CharIndexToVisualColumn(expanded, segments[wrapRow].Start);
+                    int desiredInRow = currentVisCol - segStartVis;
+                    if (desiredInRow < 0) desiredInRow = 0;
 
                     if (wrapRow < totalRows - 1)
                     {
                         // Move to next wrap row in same line.
-                        int targetExpCol = (wrapRow + 1) * wrapCols + desiredInRow;
-                        int nextRowEnd = Math.Min((wrapRow + 2) * wrapCols, ExpandedLength(text));
-                        targetExpCol = Math.Min(targetExpCol, nextRowEnd);
-                        long newCol = CompressedLength(text, targetExpCol);
+                        int nextSegStart = segments[wrapRow + 1].Start;
+                        int nextSegVisStart = EditorSurface.CharIndexToVisualColumn(expanded, nextSegStart);
+                        int targetVisCol = nextSegVisStart + desiredInRow;
+                        int nextSegVisEnd = EditorSurface.CharIndexToVisualColumn(expanded, nextSegStart + segments[wrapRow + 1].Length);
+                        targetVisCol = Math.Min(targetVisCol, nextSegVisEnd);
+                        int targetCharIdx = EditorSurface.VisualColumnToCharIndex(expanded, targetVisCol);
+                        long newCol = CompressedLength(text, targetCharIdx);
                         return (line, newCol);
                     }
                     else
@@ -541,9 +627,12 @@ public sealed class EditorControl : UserControl
                         if (nextLine >= _document.LineCount) return null;
 
                         string nextText = _document.GetLine(nextLine);
-                        int targetExpCol = desiredInRow;
-                        targetExpCol = Math.Min(targetExpCol, ExpandedLength(nextText));
-                        long newCol = CompressedLength(nextText, targetExpCol);
+                        string nextExpanded = _surface.ExpandTabsPublic(nextText);
+                        int targetVisCol = desiredInRow;
+                        int totalVisWidth = EditorSurface.CharIndexToVisualColumn(nextExpanded, nextExpanded.Length);
+                        targetVisCol = Math.Min(targetVisCol, totalVisWidth);
+                        int targetCharIdx = EditorSurface.VisualColumnToCharIndex(nextExpanded, targetVisCol);
+                        long newCol = CompressedLength(nextText, targetCharIdx);
                         return (nextLine, newCol);
                     }
                 };
@@ -1058,31 +1147,9 @@ public sealed class EditorControl : UserControl
     /// <summary>Shows the Go to Line dialog.</summary>
     public void ShowGoToLineDialog()
     {
-        using var dialog = new Form
-        {
-            Text = "Go to Line",
-            Size = new Size(300, 130),
-            StartPosition = FormStartPosition.CenterParent,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
-            MinimizeBox = false,
-        };
-
-        var label = new Label { Text = $"Line number (1 - {TotalLines}):", Left = 12, Top = 12, Width = 260 };
-        var textBox = new TextBox { Left = 12, Top = 36, Width = 260, Text = (CurrentLine + 1).ToString() };
-        var btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 116, Top = 66, Width = 75 };
-        var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 197, Top = 66, Width = 75 };
-
-        dialog.Controls.AddRange([label, textBox, btnOk, btnCancel]);
-        dialog.AcceptButton = btnOk;
-        dialog.CancelButton = btnCancel;
-        textBox.SelectAll();
-
-        if (dialog.ShowDialog(FindForm()) == DialogResult.OK &&
-            long.TryParse(textBox.Text, out long lineNum))
-        {
-            GoToLine(lineNum - 1);
-        }
+        long? lineNum = Dialogs.GoToLineDialog.Show(FindForm(), TotalLines, CurrentLine + 1);
+        if (lineNum.HasValue)
+            GoToLine(lineNum.Value - 1);
     }
 
     /// <summary>Increases the font size.</summary>
@@ -1574,6 +1641,7 @@ public sealed class EditorControl : UserControl
     {
         float newSize = Math.Max(DefaultMinZoomFontSize, DefaultFontSize + _zoomLevel);
         _surface.Font = new Font(_surface.Font.FontFamily, newSize, _surface.Font.Style, GraphicsUnit.Point);
+        _maxLinePixelWidthCache = 0;
         UpdateScrollBars();
         _gutterPanel.Invalidate();
         Invalidate(true);
@@ -1632,6 +1700,9 @@ public sealed class EditorControl : UserControl
     // ────────────────────────────────────────────────────────────────────
 
     private void UpdateScrollBars()
+        => UpdateScrollBars(allowExpensiveWidthScan: true);
+
+    private void UpdateScrollBars(bool allowExpensiveWidthScan)
     {
         long totalVisibleLines;
         if (_wordWrap)
@@ -1642,52 +1713,175 @@ public sealed class EditorControl : UserControl
         {
             totalVisibleLines = _foldingManager.GetVisibleLineCount(_document.LineCount);
         }
-        int maxLineWidth = _wordWrap ? 0 : EstimateMaxLineWidth();
 
+        // Clamp scroll position before estimating max line width so that
+        // EstimateMaxLinePixelWidth samples valid lines (e.g. after toggling
+        // word-wrap off, FirstVisibleLine may be a stale wrap-row index).
+        long maxFirst = Math.Max(0, totalVisibleLines - 1);
+        if (_scrollManager.FirstVisibleLine > maxFirst)
+            _scrollManager.FirstVisibleLine = maxFirst;
+
+        // maxLineWidth and visibleColumns are now in pixels for accurate CJK handling.
+        int maxLinePixelWidth;
+        if (_wordWrap)
+        {
+            maxLinePixelWidth = 0;
+        }
+        else if (!allowExpensiveWidthScan)
+        {
+            // In large-document mode, avoid full scans but keep scrollbar range
+            // responsive from visible/caret line lengths without stale overshoot.
+            int visibleUpperBound = EstimateVisibleMaxLinePixelWidthUpperBound();
+            _maxLinePixelWidthCache = Math.Max(80 * _surface.CharWidth, visibleUpperBound);
+            maxLinePixelWidth = _maxLinePixelWidthCache + _surface.MaxCharPixelWidth;
+        }
+        else
+        {
+            maxLinePixelWidth = EstimateMaxLinePixelWidth() + _surface.MaxCharPixelWidth;
+        }
+
+        _scrollManager.HorizontalSmallChange = Math.Max(1, _surface.CharWidth);
+        // The text area starts at TextLeftPadding, so the visible text width
+        // is ClientSize.Width minus that padding.
+        int textAreaWidth = Math.Max(1, _surface.ClientSize.Width - DefaultTextLeftPadding);
         _scrollManager.UpdateScrollBars(
             totalVisibleLines,
-            maxLineWidth,
+            maxLinePixelWidth,
             _surface.VisibleLineCount,
-            _surface.MaxVisibleColumns);
+            textAreaWidth);
     }
 
     /// <summary>
-    /// Estimates the width of the longest visible line (in characters).
-    /// For performance, samples the currently visible lines rather than
-    /// scanning the entire document.
+    /// Cheap upper-bound width estimate from currently visible lines and caret line.
+    /// Uses line lengths only (O(1) each) so it is safe for huge documents.
     /// </summary>
-    private int EstimateMaxLineWidth()
+    private int EstimateVisibleMaxLinePixelWidthUpperBound()
     {
-        int maxWidth = 80; // Reasonable default minimum.
-        long firstVisible = _scrollManager.FirstVisibleLine;
-        int visibleCount = _surface.VisibleLineCount + 1;
+        if (_wordWrap || _document.LineCount <= 0)
+            return 0;
 
-        // Determine doc line range for visible lines.
-        long minDocLine = long.MaxValue, maxDocLine = long.MinValue;
-        for (int i = 0; i < visibleCount; i++)
+        int upperBoundPerChar = Math.Max(_surface.MaxCharPixelWidth, _surface.CharWidth * _surface.TabSize);
+        int maxWidth = 80 * _surface.CharWidth;
+        const int MaxExactMeasurements = 2;
+        const long MaxExactLineLength = 1_000_000;
+        int exactMeasurements = 0;
+        long exactLineA = -1;
+        long exactLineB = -1;
+
+        static bool WasMeasured(long line, long a, long b) => line == a || line == b;
+        void MarkMeasured(long line)
         {
-            long docLine = _foldingManager.VisibleLineToDocumentLine(firstVisible + i);
-            if (docLine >= _document.LineCount) break;
-            if (docLine < minDocLine) minDocLine = docLine;
-            if (docLine > maxDocLine) maxDocLine = docLine;
+            if (exactLineA < 0) exactLineA = line;
+            else if (exactLineB < 0) exactLineB = line;
         }
 
-        if (minDocLine > maxDocLine) return maxWidth;
-
-        // Batch-fetch lines instead of per-line GetLine calls.
-        int rangeCount = (int)(maxDocLine - minDocLine + 1);
-        var lineData = _document.GetLineRange(minDocLine, rangeCount);
-
-        for (int i = 0; i < lineData.Length; i++)
+        int MeasureLineWidth(long docLine, long len)
         {
-            string text = lineData[i].Text;
-            // For extremely long lines, use the raw character count as an
-            // approximation to avoid iterating millions of characters.
-            int expanded = text.Length > 100_000 ? text.Length : ExpandedLength(text);
-            if (expanded > maxWidth) maxWidth = expanded;
+            if (exactMeasurements < MaxExactMeasurements &&
+                len > 0 && len <= MaxExactLineLength &&
+                !WasMeasured(docLine, exactLineA, exactLineB))
+            {
+                string text = _document.GetLine(docLine);
+                exactMeasurements++;
+                MarkMeasured(docLine);
+                return _surface.LinePixelWidth(text);
+            }
+
+            // For very long lines, upperBoundPerChar can massively overshoot
+            // (emoji/CJK fallback widths). Use cell width to keep scrollbar max realistic.
+            int fallbackPerChar = len > MaxExactLineLength
+                ? Math.Max(1, _surface.CharWidth)
+                : upperBoundPerChar;
+            long pxUpper = len * (long)fallbackPerChar;
+            return pxUpper >= int.MaxValue ? int.MaxValue : (int)pxUpper;
+        }
+
+        long firstVisible = _scrollManager.FirstVisibleLine;
+        int sampleCount = Math.Max(16, _surface.VisibleLineCount + 6);
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            long visibleLine = firstVisible + i;
+            long docLine = _foldingManager.VisibleLineToDocumentLine(visibleLine);
+            if (docLine < 0 || docLine >= _document.LineCount) break;
+
+            long len = _document.GetLineLength(docLine);
+            int px = MeasureLineWidth(docLine, len);
+            if (px > maxWidth)
+                maxWidth = px;
+        }
+
+        // Include caret line to keep typing near EOF responsive.
+        if (_caretManager.Line >= 0 && _caretManager.Line < _document.LineCount)
+        {
+            long caretLen = _document.GetLineLength(_caretManager.Line);
+            int caretPx = MeasureLineWidth(_caretManager.Line, caretLen);
+            if (caretPx > maxWidth)
+                maxWidth = caretPx;
         }
 
         return maxWidth;
+    }
+
+    /// <summary>
+    /// Computes the pixel width of the longest line in the document.
+    /// Uses a bounded candidate approach so very large files do not block UI.
+    /// </summary>
+    private int EstimateMaxLinePixelWidth()
+    {
+        if (_maxLinePixelWidthCache > 0)
+            return _maxLinePixelWidthCache;
+
+        int maxWidth = 80 * _surface.CharWidth; // Reasonable default minimum.
+        long lineCount = _document.LineCount;
+        if (lineCount <= 0)
+        {
+            _maxLinePixelWidthCache = maxWidth;
+            return _maxLinePixelWidthCache;
+        }
+
+        // Pass 1: pick longest lines by raw length (cheap O(1) per line).
+        const int CandidateCount = 24;
+        long[] candidateLines = new long[CandidateCount];
+        long[] candidateLengths = new long[CandidateCount];
+        int candidatesFilled = 0;
+
+        for (long i = 0; i < lineCount; i++)
+        {
+            long len = _document.GetLineLength(i);
+            if (candidatesFilled < CandidateCount)
+            {
+                candidateLines[candidatesFilled] = i;
+                candidateLengths[candidatesFilled] = len;
+                candidatesFilled++;
+                continue;
+            }
+
+            int minIdx = 0;
+            for (int j = 1; j < CandidateCount; j++)
+                if (candidateLengths[j] < candidateLengths[minIdx])
+                    minIdx = j;
+
+            if (len > candidateLengths[minIdx])
+            {
+                candidateLines[minIdx] = i;
+                candidateLengths[minIdx] = len;
+            }
+        }
+
+        // Pass 2: exact pixel measurement only for selected candidates.
+        int upperBoundPerChar = Math.Max(_surface.MaxCharPixelWidth, _surface.CharWidth * _surface.TabSize);
+        for (int i = 0; i < candidatesFilled; i++)
+        {
+            string text = _document.GetLine(candidateLines[i]);
+            int pixelWidth = text.Length > 200_000
+                ? text.Length * upperBoundPerChar
+                : _surface.LinePixelWidth(text);
+            if (pixelWidth > maxWidth) maxWidth = pixelWidth;
+        }
+
+        _maxLinePixelWidthCache = maxWidth;
+        return _maxLinePixelWidthCache;
     }
 
     private int ExpandedLength(string text)
@@ -1731,6 +1925,69 @@ public sealed class EditorControl : UserControl
                 col += tabSize - (col % tabSize);
             else
                 col++;
+        }
+        return text.Length;
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Visual-column helpers (CJK-aware)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the visual column width of a line, counting CJK/wide chars as 2
+    /// and expanding tabs to tab stops using visual columns.
+    /// </summary>
+    private int VisualLineWidth(string text)
+    {
+        int vc = 0;
+        int tabSize = _surface.TabSize;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '\t')
+                vc += tabSize - (vc % tabSize);
+            else
+                vc += EditorSurface.GetCharDisplayWidth(text, i);
+        }
+        return vc;
+    }
+
+    /// <summary>
+    /// Returns the visual column count from the start of the line up to
+    /// <paramref name="charIndex"/>, counting CJK/wide chars as 2.
+    /// </summary>
+    private int VisualExpandedLength(string text, int charIndex)
+    {
+        int vc = 0;
+        int limit = Math.Min(charIndex, text.Length);
+        int tabSize = _surface.TabSize;
+        for (int i = 0; i < limit; i++)
+        {
+            char c = text[i];
+            if (c == '\t')
+                vc += tabSize - (vc % tabSize);
+            else
+                vc += EditorSurface.GetCharDisplayWidth(text, i);
+        }
+        return vc;
+    }
+
+    /// <summary>
+    /// Converts a visual column count back to a character index, accounting
+    /// for CJK/wide chars occupying 2 visual columns.
+    /// </summary>
+    private int VisualCompressedLength(string text, int visualCol)
+    {
+        int vc = 0;
+        int tabSize = _surface.TabSize;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (vc >= visualCol) return i;
+            char c = text[i];
+            if (c == '\t')
+                vc += tabSize - (vc % tabSize);
+            else
+                vc += EditorSurface.GetCharDisplayWidth(text, i);
         }
         return text.Length;
     }
@@ -1959,8 +2216,53 @@ public sealed class EditorControl : UserControl
 
     private void OnScrollChanged()
     {
+        // Re-estimate max line width for the newly visible lines so the
+        // horizontal scrollbar range grows as the user explores the document.
+        bool largeDoc = _document.Length >= LargeDocumentInteractiveThreshold;
+        long visDocLine = _wordWrap
+            ? _surface.WrapRowToDocumentLine(_scrollManager.FirstVisibleLine).DocLine
+            : _foldingManager.VisibleLineToDocumentLine(_scrollManager.FirstVisibleLine);
+        bool ultraLongVisibleLine = visDocLine >= 0 && visDocLine < _document.LineCount &&
+            _document.GetLineLength(visDocLine) > UltraLongLineInteractiveThreshold;
+        bool interactiveFastMode = largeDoc || ultraLongVisibleLine || _wordWrap;
+
+        // In wrap mode, recomputing scrollbars on every scroll tick stalls UI.
+        if (!_wordWrap)
+        {
+            if (!interactiveFastMode)
+            {
+                UpdateScrollBars(allowExpensiveWidthScan: true);
+            }
+            else
+            {
+                long now = Environment.TickCount64;
+                if (now - _lastFastScrollUiTick >= FastScrollUiRefreshIntervalMs)
+                {
+                    _lastFastScrollUiTick = now;
+                    UpdateScrollBars(allowExpensiveWidthScan: false);
+                }
+            }
+        }
+
         // Tokenize newly visible lines BEFORE repainting so tokens are ready.
-        RetokenizeAllVisible();
+        if (!_wordWrap && !interactiveFastMode)
+        {
+            RetokenizeAllVisible();
+        }
+        else if (!_wordWrap)
+        {
+            EnsureVisibleLineTokenizedInFastMode(visDocLine);
+        }
+        else
+        {
+            // In wrap mode, keep highlighting in sync while capping lex cost.
+            long now = Environment.TickCount64;
+            if (now - _lastWrapScrollRetokenizeTick >= WrapScrollRetokenizeIntervalMs)
+            {
+                _lastWrapScrollRetokenizeTick = now;
+                RetokenizeAllVisible();
+            }
+        }
 
         // Repaint both gutter and surface synchronously together so they
         // scroll in lock-step. Previously the gutter was Updated first,
@@ -1968,17 +2270,56 @@ public sealed class EditorControl : UserControl
         // causing the text to visibly lag behind the line numbers.
         _gutterPanel.Invalidate();
         _surface.Invalidate();
-        _gutterPanel.Update();
-        _surface.Update();
+        if (!interactiveFastMode || _wordWrap)
+        {
+            _surface.Update();
+            _gutterPanel.Update();
+        }
+        else
+        {
+            // Keep line numbers responsive during very fast plain-text scrolling.
+            _gutterPanel.Update();
+        }
+    }
+
+    private void EnsureVisibleLineTokenizedInFastMode(long visDocLine)
+    {
+        if (_lexer is null || _document.Length == 0) return;
+        if (visDocLine < 0 || visDocLine >= _document.LineCount) return;
+        if (_tokenCache.GetCachedTokens(visDocLine) is not null) return;
+
+        long len = _document.GetLineLength(visDocLine);
+        if (len <= UltraLongLineInteractiveThreshold) return;
+        if (len > FastModeSingleLineTokenizeLimit || len > int.MaxValue) return;
+
+        LexerState startState = LexerState.Normal;
+        for (long line = visDocLine - 1; line >= 0 && visDocLine - line <= 500; line--)
+        {
+            LexerState? state = _tokenCache.GetCachedState(line);
+            if (state.HasValue)
+            {
+                startState = state.Value;
+                break;
+            }
+        }
+
+        string lineText = _document.GetLine(visDocLine);
+        var (tokens, endState) = _lexer.Tokenize(lineText, startState);
+        _tokenCache.SetCache(visDocLine, tokens, endState);
     }
 
     private void OnCaretMoved(long newOffset)
     {
-        _caretManager.EnsureVisible(_scrollManager, _surface.VisibleLineCount, _surface.MaxVisibleColumns);
+        _caretManager.EnsureVisible(_scrollManager, _surface.VisibleLineCount,
+            _surface.ClientSize.Width - DefaultTextLeftPadding);
         CaretMoved?.Invoke(this, newOffset);
         CaretPositionChanged?.Invoke(this, EventArgs.Empty);
-        _surface.Invalidate();
-        _gutterPanel.Invalidate();
+        bool draggingSelection = (Control.MouseButtons & MouseButtons.Left) != 0;
+        if (!draggingSelection)
+        {
+            _surface.Invalidate();
+            _gutterPanel.Invalidate();
+        }
     }
 
     private void OnBlinkStateChanged(bool visible)
@@ -2003,6 +2344,7 @@ public sealed class EditorControl : UserControl
             _caretManager.MoveToLineColumn(visLine, 0);
         }
 
+        _surface.InvalidateWrapRowCache();
         UpdateScrollBars();
         RetokenizeAllVisible();
         _surface.Invalidate();
@@ -2011,14 +2353,23 @@ public sealed class EditorControl : UserControl
 
     private void OnTextModified()
     {
-        UpdateScrollBars();
+        bool largeDoc = _document.Length >= LargeDocumentInteractiveThreshold;
+        bool ultraLongCaretLine = _caretManager.Line >= 0 &&
+            _caretManager.Line < _document.LineCount &&
+            _document.GetLineLength(_caretManager.Line) > UltraLongLineInteractiveThreshold;
+        bool interactiveFastMode = largeDoc || ultraLongCaretLine;
+        if (!interactiveFastMode)
+            _maxLinePixelWidthCache = 0;
+        _surface.InvalidateWrapRowCache();
+        UpdateScrollBars(allowExpensiveWidthScan: !interactiveFastMode);
 
         // Incremental re-lexing from the edit point, then ensure all
         // visible lines are tokenized (handles multi-line paste, etc.).
-        if (_lexer is not null)
+        if (_lexer is not null && !ultraLongCaretLine)
         {
             _tokenCache.IncrementalRelex(_caretManager.Line, _document, _lexer);
-            RetokenizeAllVisible();
+            if (!interactiveFastMode)
+                RetokenizeAllVisible();
         }
 
         TextChanged?.Invoke(this, EventArgs.Empty);
@@ -2042,6 +2393,9 @@ public sealed class EditorControl : UserControl
             }
             _tokenCache.Invalidate(changeLine, _document.LineCount - changeLine);
         }
+
+        _surface.InvalidateWrapRowCache();
+        _surface.InvalidateUltraWrapLexerCache();
 
         // Update live byte-size estimate.
         RecalcFileSizeBytes();

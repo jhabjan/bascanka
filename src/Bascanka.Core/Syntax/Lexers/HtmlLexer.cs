@@ -3,12 +3,22 @@ namespace Bascanka.Core.Syntax.Lexers;
 /// <summary>
 /// Lexer for HTML.  Handles tags, attributes, attribute values, entities
 /// (<c>&amp;amp;</c>), and HTML comments (<c>&lt;!-- --&gt;</c>).
-/// Does not attempt to lex embedded <c>&lt;script&gt;</c> or <c>&lt;style&gt;</c>
-/// content with their respective lexers; those regions are emitted as plain text.
+/// Supports embedded <c>&lt;script&gt;</c> (JavaScript) and <c>&lt;style&gt;</c> (CSS)
+/// content by delegating those regions to their respective lexers.
 /// </summary>
 public sealed class HtmlLexer : BaseLexer
 {
     private const int StateInComment = 10;
+    private const int StateInScript = 20;
+    private const int StateInStyle = 21;
+
+    private const int TagKindNone = 0;
+    private const int TagKindScript = 1;
+    private const int TagKindStyle = 2;
+    private const int TagStateClosingFlag = 0x100;
+
+    private static readonly JavaScriptLexer JsLexer = new();
+    private static readonly CssLexer CssLexer = new();
 
     public override string LanguageId => "html";
     public override string[] FileExtensions => [".html", ".htm", ".xhtml", ".shtml"];
@@ -75,7 +85,9 @@ public sealed class HtmlLexer : BaseLexer
         return state.StateId switch
         {
             StateInComment => ContinueHtmlComment(line, ref pos, tokens),
-            LexerState.StateInTag => ContinueTag(line, ref pos, tokens),
+            LexerState.StateInTag => ContinueTag(line, ref pos, tokens, state.NestingDepth),
+            StateInScript => ContinueScript(line, ref pos, tokens, state),
+            StateInStyle => ContinueStyle(line, ref pos, tokens, state),
             _ => state,
         };
     }
@@ -124,8 +136,12 @@ public sealed class HtmlLexer : BaseLexer
         pos++; // skip <
 
         // Closing tag?
+        bool isClosing = false;
         if (pos < line.Length && line[pos] == '/')
+        {
             pos++;
+            isClosing = true;
+        }
 
         // Read tag name.
         int nameStart = pos;
@@ -135,10 +151,13 @@ public sealed class HtmlLexer : BaseLexer
         tokens.Add(new Token(start, pos - start, TokenType.Tag));
 
         // Read attributes until > or end of line.
-        return ReadAttributes(line, ref pos, tokens);
+        string tagName = line.Substring(nameStart, pos - nameStart);
+        int tagKind = GetTagKind(tagName);
+        int tagState = tagKind | (isClosing ? TagStateClosingFlag : 0);
+        return ReadAttributes(line, ref pos, tokens, tagState);
     }
 
-    private static LexerState ReadAttributes(string line, ref int pos, List<Token> tokens)
+    private static LexerState ReadAttributes(string line, ref int pos, List<Token> tokens, int tagState)
     {
         while (pos < line.Length)
         {
@@ -156,20 +175,20 @@ public sealed class HtmlLexer : BaseLexer
             if (line[pos] == '/' && pos + 1 < line.Length && line[pos + 1] == '>')
             {
                 EmitPunctuation(line, ref pos, tokens, 2);
-                return LexerState.Normal;
+                return NextStateAfterTagClose(tagState);
             }
 
             if (line[pos] == '>')
             {
                 EmitPunctuation(line, ref pos, tokens);
-                return LexerState.Normal;
+                return NextStateAfterTagClose(tagState);
             }
 
             // Attribute name.
             if (IsIdentStart(line[pos]) || line[pos] == '-' || line[pos] == ':' || line[pos] == '@' || line[pos] == '*')
             {
                 int attrStart = pos;
-                while (pos < line.Length && (IsIdentPart(line[pos]) || line[pos] == '-' || line[pos] == ':'))
+                while (pos < line.Length && (IsIdentPart(line[pos]) || line[pos] == '-' || line[pos] == ':' || line[pos] == '@' || line[pos] == '*'))
                     pos++;
                 tokens.Add(new Token(attrStart, pos - attrStart, TokenType.TagAttribute));
 
@@ -204,12 +223,12 @@ public sealed class HtmlLexer : BaseLexer
         }
 
         // Tag not closed on this line.
-        return new LexerState(LexerState.StateInTag, 0);
+        return new LexerState(LexerState.StateInTag, tagState);
     }
 
-    private static LexerState ContinueTag(string line, ref int pos, List<Token> tokens)
+    private static LexerState ContinueTag(string line, ref int pos, List<Token> tokens, int tagState)
     {
-        return ReadAttributes(line, ref pos, tokens);
+        return ReadAttributes(line, ref pos, tokens, tagState);
     }
 
     private static void ReadAttrValue(string line, ref int pos, List<Token> tokens, char quote)
@@ -224,5 +243,80 @@ public sealed class HtmlLexer : BaseLexer
             pos++; // skip closing quote
 
         tokens.Add(new Token(start, pos - start, TokenType.TagAttributeValue));
+    }
+
+    private static LexerState ContinueScript(string line, ref int pos, List<Token> tokens, LexerState state)
+    {
+        return ContinueEmbedded(line, ref pos, tokens, state, "</script", JsLexer, StateInScript);
+    }
+
+    private static LexerState ContinueStyle(string line, ref int pos, List<Token> tokens, LexerState state)
+    {
+        return ContinueEmbedded(line, ref pos, tokens, state, "</style", CssLexer, StateInStyle);
+    }
+
+    private static LexerState ContinueEmbedded(
+        string line, ref int pos, List<Token> tokens, LexerState state,
+        string closeTag, ILexer lexer, int modeStateId)
+    {
+        int closeIdx = line.IndexOf(closeTag, pos, StringComparison.OrdinalIgnoreCase);
+        int end = closeIdx >= 0 ? closeIdx : line.Length;
+
+        var subState = UnpackEmbeddedState(state.NestingDepth);
+        if (end > pos)
+        {
+            var (subTokens, endState) = lexer.Tokenize(line.Substring(pos, end - pos), subState);
+            foreach (var t in subTokens)
+                tokens.Add(new Token(t.Start + pos, t.Length, t.Type));
+            subState = endState;
+        }
+
+        if (closeIdx >= 0)
+        {
+            pos = closeIdx;
+            return LexerState.Normal;
+        }
+
+        pos = line.Length;
+        return new LexerState(modeStateId, PackEmbeddedState(subState));
+    }
+
+    private static int GetTagKind(string tagName)
+    {
+        if (string.Equals(tagName, "script", StringComparison.OrdinalIgnoreCase))
+            return TagKindScript;
+        if (string.Equals(tagName, "style", StringComparison.OrdinalIgnoreCase))
+            return TagKindStyle;
+        return TagKindNone;
+    }
+
+    private static LexerState NextStateAfterTagClose(int tagState)
+    {
+        bool isClosing = (tagState & TagStateClosingFlag) != 0;
+        int tagKind = tagState & 0xFF;
+
+        if (isClosing)
+            return LexerState.Normal;
+
+        return tagKind switch
+        {
+            TagKindScript => new LexerState(StateInScript, PackEmbeddedState(LexerState.Normal)),
+            TagKindStyle => new LexerState(StateInStyle, PackEmbeddedState(LexerState.Normal)),
+            _ => LexerState.Normal,
+        };
+    }
+
+    private static int PackEmbeddedState(LexerState state)
+    {
+        int stateId = state.StateId & 0xFFFF;
+        int depth = state.NestingDepth & 0xFFFF;
+        return stateId | (depth << 16);
+    }
+
+    private static LexerState UnpackEmbeddedState(int packed)
+    {
+        int stateId = packed & 0xFFFF;
+        int depth = (packed >> 16) & 0xFFFF;
+        return new LexerState(stateId, depth);
     }
 }

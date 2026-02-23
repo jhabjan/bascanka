@@ -9,6 +9,9 @@ namespace Bascanka.Editor.Controls;
 /// </summary>
 public sealed class CaretManager : IDisposable
 {
+    private const long LargeLineHomeThreshold = 1_000_000;
+    private const int HomePrefixScanLimit = 4096;
+
     private readonly System.Windows.Forms.Timer _blinkTimer;
     private PieceTable? _document;
     private long _offset;
@@ -397,10 +400,27 @@ public sealed class CaretManager : IDisposable
     {
         if (_document is null) return;
 
-        string lineText = _document.GetLine(_line);
+        long lineLen = _document.GetLineLength(_line);
         long firstNonWs = 0;
-        while (firstNonWs < lineText.Length && char.IsWhiteSpace(lineText[(int)firstNonWs]))
-            firstNonWs++;
+
+        if (lineLen > LargeLineHomeThreshold)
+        {
+            // Avoid materializing very large lines on Home/Shift+Home.
+            long lineStart = _document.GetLineStartOffset(_line);
+            long scanLimit = Math.Min(lineLen, HomePrefixScanLimit);
+            while (firstNonWs < scanLimit && char.IsWhiteSpace(_document.GetCharAt(lineStart + firstNonWs)))
+                firstNonWs++;
+
+            // If indentation extends beyond the scan window, prefer column 0.
+            if (firstNonWs >= scanLimit && scanLimit < lineLen)
+                firstNonWs = 0;
+        }
+        else
+        {
+            string lineText = _document.GetLine(_line);
+            while (firstNonWs < lineText.Length && char.IsWhiteSpace(lineText[(int)firstNonWs]))
+                firstNonWs++;
+        }
 
         if (_column == firstNonWs && firstNonWs != 0)
         {

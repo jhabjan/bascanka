@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BASCANKA Screensaver</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+    .hint {
+      position: fixed;
+      left: 12px;
+      bottom: 10px;
+      color: rgba(255,255,255,0.35);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hint">Move mouse / touch to steer • Press F for fullscreen • Space to toggle trails</div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d', { alpha: false });
+
+      const DPR = () => Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      let dpr = DPR();
+
+      let W = 0, H = 0, CX = 0, CY = 0;
+
+      function resize() {
+        dpr = DPR();
+        W = Math.floor(innerWidth * dpr);
+        H = Math.floor(innerHeight * dpr);
+        canvas.width = W;
+        canvas.height = H;
+        CX = W / 2;
+        CY = H / 2;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+      }
+      addEventListener('resize', resize, { passive: true });
+      resize();
+
+      // Pointer steering
+      const pointer = { x: 0, y: 0, tx: 0, ty: 0, active: false };
+      function setPointer(clientX, clientY) {
+        // Normalize to [-1, 1]
+        pointer.tx = (clientX / innerWidth) * 2 - 1;
+        pointer.ty = (clientY / innerHeight) * 2 - 1;
+        pointer.active = true;
+      }
+      addEventListener('mousemove', e => setPointer(e.clientX, e.clientY), { passive: true });
+      addEventListener('touchstart', e => {
+        const t = e.touches[0];
+        if (t) setPointer(t.clientX, t.clientY);
+      }, { passive: true });
+      addEventListener('touchmove', e => {
+        const t = e.touches[0];
+        if (t) setPointer(t.clientX, t.clientY);
+      }, { passive: true });
+
+      // Fullscreen + trails toggle
+      let trails = true;
+      addEventListener('keydown', async (e) => {
+        if (e.code === 'Space') {
+          trails = !trails;
+        } else if (e.key.toLowerCase() === 'f') {
+          try {
+            if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+            else await document.exitFullscreen();
+          } catch {}
+        }
+      });
+
+      // Text swarm in pseudo-3D space
+      const TEXT = 'BASCANKA';
+      const N = 18;
+      const items = Array.from({ length: N }, (_, i) => ({
+        phase: Math.random() * Math.PI * 2,
+        phase2: Math.random() * Math.PI * 2,
+        phase3: Math.random() * Math.PI * 2,
+        spin: (Math.random() * 2 - 1) * 0.8,
+        wobble: 0.6 + Math.random() * 1.4,
+        depth: 0.4 + Math.random() * 1.2,
+        size: 0.9 + Math.random() * 1.6,
+        lane: i / N
+      }));
+
+      // Camera / projection
+      const camera = {
+        fov: 900, // pixels in virtual camera space
+        zNear: 140,
+        zFar: 1400
+      };
+
+      // Color + glow helpers
+      function glow(h, s, l, a) {
+        ctx.shadowColor = `hsla(${h}, ${s}%, ${l}%, ${a})`;
+        ctx.shadowBlur = 30 * dpr;
+      }
+
+      // Background fill (with optional trails)
+      function clearFrame() {
+        if (trails) {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.fillStyle = 'rgba(0,0,0,0.12)';
+          ctx.fillRect(0, 0, W, H);
+        } else {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, W, H);
+        }
+      }
+
+      // Smooth pointer
+      function updatePointer() {
+        pointer.x += (pointer.tx - pointer.x) * 0.06;
+        pointer.y += (pointer.ty - pointer.y) * 0.06;
+      }
+
+      function draw(t) {
+        t *= 0.001; // seconds
+        updatePointer();
+        clearFrame();
+
+        // Slight starfield shimmer
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 70; i++) {
+          const sx = (Math.sin(t * 0.7 + i * 12.345) * 0.5 + 0.5) * W;
+          const sy = (Math.cos(t * 0.9 + i * 7.89) * 0.5 + 0.5) * H;
+          const tw = 1.2 * dpr;
+          const a = 0.08 + 0.08 * Math.sin(t * 2 + i);
+          ctx.fillStyle = `rgba(255,255,255,${a})`;
+          ctx.fillRect(sx, sy, tw, tw);
+        }
+
+        // Sort by depth so nearer text draws last
+        const drawn = items.map((it, idx) => {
+          const zWave = Math.sin(t * 1.2 * it.depth + it.phase) * 0.5 + 0.5; // [0,1]
+          const z = camera.zNear + zWave * (camera.zFar - camera.zNear);
+          return { it, idx, z };
+        }).sort((a, b) => a.z - b.z);
+
+        for (const d of drawn) {
+          const it = d.it;
+          const z = d.z;
+
+          // Projection scale: nearer -> bigger
+          const scale = camera.fov / (camera.fov + z);
+          const bob = Math.sin(t * (0.9 + it.wobble) + it.phase2);
+          const sweep = Math.cos(t * (0.7 + it.wobble) + it.phase3);
+
+          // Base orbit around center with pointer steering
+          const orbitR = (0.18 + 0.22 * it.size) * Math.min(W, H);
+          const x = CX + (sweep * orbitR + pointer.x * 0.22 * W) * (0.65 + 0.9 * scale);
+          const y = CY + (bob   * orbitR + pointer.y * 0.18 * H) * (0.65 + 0.9 * scale);
+
+          // Rotation + "flying" twist
+          const rot = t * it.spin + it.lane * Math.PI * 2 + (pointer.x * 0.35);
+          const tilt = (pointer.y * 0.25);
+
+          // Color cycling with depth influence
+          const hue = (t * 120 + it.lane * 360 + (1 - scale) * 120) % 360;
+          const sat = 85;
+          const light = 60 + 18 * Math.sin(t * 2 + it.lane * 6);
+          const alpha = Math.min(1, 0.25 + 0.9 * (1 - (z - camera.zNear) / (camera.zFar - camera.zNear)));
+
+          // Size relative to viewport + depth
+          const fontSize = (34 + 110 * it.size) * scale * dpr;
+
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(rot);
+          ctx.transform(1, tilt * 0.45, -tilt * 0.12, 1, 0, 0);
+
+          ctx.font = `900 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Glow outline + fill
+          glow(hue, sat, light, 0.55 * alpha);
+          ctx.lineWidth = Math.max(1.5 * dpr, 6 * scale * dpr);
+          ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${0.65 * alpha})`;
+          ctx.strokeText(TEXT, 0, 0);
+
+          glow((hue + 40) % 360, sat, Math.min(80, light + 12), 0.75 * alpha);
+          ctx.fillStyle = `hsla(${hue}, ${sat}%, ${light}%, ${0.9 * alpha})`;
+          ctx.fillText(TEXT, 0, 0);
+
+          // Subtle chromatic echo for extra "fancy"
+          ctx.globalAlpha = 0.22 * alpha;
+          ctx.fillStyle = `hsla(${(hue + 160) % 360}, ${sat}%, ${light}%, ${0.8 * alpha})`;
+          ctx.fillText(TEXT, 2.5 * dpr, -2.0 * dpr);
+          ctx.fillStyle = `hsla(${(hue + 300) % 360}, ${sat}%, ${light}%, ${0.8 * alpha})`;
+          ctx.fillText(TEXT, -2.5 * dpr, 2.0 * dpr);
+
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      // Kick off with a clean black frame
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      requestAnimationFrame(draw);
+    })();
+  </script>
+</body>
+</html>

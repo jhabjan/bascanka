@@ -62,7 +62,7 @@ public sealed class LexerRegistry
     /// <summary>
     /// All registered language identifiers.
     /// </summary>
-    public IReadOnlyList<string> LanguageIds => _byId.Keys.ToList().AsReadOnly();
+    public IReadOnlyList<string> LanguageIds => _byId.Keys.OrderBy(k=>k).ToList().AsReadOnly();
 
     /// <summary>
     /// Registers every built-in lexer that ships with Bascanka.

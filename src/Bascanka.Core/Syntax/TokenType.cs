@@ -77,4 +77,10 @@ public enum TokenType : byte
 
     /// <summary>A link in Markdown (<c>[text](url)</c>).</summary>
     MarkdownLink,
+
+    /// <summary>A JSON object key (property name).</summary>
+    JsonKey,
+
+    /// <summary>A JSON string value.</summary>
+    JsonString,
 }

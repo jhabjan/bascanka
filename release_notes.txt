@@ -1,15 +1,36 @@
-﻿v.1.0.4.		????-??-??
+﻿v.1.0.5.		2026-02-23
+--------------------------
+- horizontal scrolling and text measurement converted from cell-based to pixel-based (layout, scrollbar range, caret, and wrapping now use real pixels instead of fixed cells, enabling correct mixed-width rendering CJK, emoji, tabs, Latin).
+- fixed horizontal scrollbar range not covering full line width - EstimateMaxLinePixelWidth now checks all lines by length (O(1) via cached offsets) and measures top 10 longest, not just visible lines.
+- fixed cursor stuck on WrapMoveDown - now uses current column instead of sticky desired column (matches WrapMoveUp).
+- fixed sub-character pixel offset at max horizontal scroll - added one MaxCharPixelWidth padding to scrollbar range.
+- fixed caret not visible at end of long lines - ColumnToPixelOffset maps columns via ExpandedColumn for tabbed lines.
+- word wrap is now automatically disabled for files over a configurable size limit (default 50 MB), with a new setting and localized labels.
+- fixed an HTML lexer edge case that could spin in a loop on certain attributes, preventing UI hangs while scrolling.
+- html inline CSS/JavaScript highlighting and folding is now supported within <style> and <script> blocks.
+- json highlighting now distinguishes keys from string values with improved, more vivid colors for clearer readability.
+- improved typing latency on huge single-line documents.
+- improved scrolling performance on ultra-long lines.
+- session persistence is now driven entirely by recovery\manifest.json, eliminating the duplicate session.json.
+- find/replace search history now saves to search-history.json and loads at startup.
+- the Chinese encoding option has been updated to GB18030 and renamed to "Chinese (GB18030)" across menus and localized strings.
+- fixed CJK opening punctuation (《「『【 etc.) rendering issue - rendered now flush against the following character inside double-width cells, matching other CJK editors.
+- the encoding detector now heuristically prefers GB18030 when UTF-8 decoding shows replacement characters, improving auto‑detection for CJK files.
+
+v.1.0.4.		2026-02-21
 --------------------------
 - fixed a bug where typing during a box (column) selection would produce corrupted text after the first few characters.
 - fixed word wrap cut-off issue where characters on the right edge were clipped due to the text padding not being accounted for in wrap column calculations.
-- fixed word wrap cursor mavigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
+- fixed word wrap cursor navigation: arrow keys now move by visual wrap rows instead of jumping entire document lines when word wrap is enabled.
 - fixed a bug where custom highlighting profiles assigned via Language > Custom Highlighting were not restored when reopening the application.
 - word wrap is now saved per tab, so each document remembers its own setting across restarts and crashes, with new documents defaulting to the last-used state.
 - open recent files menu now displays recent files in a cleaner two-column format.
 - added move up and move down buttons for reordering custom highlighting profiles.
 - fixed CJK (Chinese, Japanese, Korean) characters overlapping in the embedded terminal by correctly treating fullwidth characters as double-width cells.
+- languages menu is now sorted ascending.
+- fixed the Go To Line dialog so buttons are no longer clipped outside the window and the dialog now respects the active editor theme.
 
-v.1.0.3.		2025-02-18
+v.1.0.3.		2026-02-18
 --------------------------
 - implemented embedded terminal (cmd.exe) to the bottom panel using the Windows ConPTY API.
 - added close/crash unsaved changes recovery with periodic automatic back-ups to "%AppData%\Bascanka\recovery" - small/untitled files are backed up in full size as UTF-8, while large memory-mapped files use efficient binary delta/changes-only save format.

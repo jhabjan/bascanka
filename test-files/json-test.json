@@ -1,0 +1,87 @@
+{
+  "ActiveTab": 5,
+  "Tabs": [
+    {
+      "Id": "31715a5e-4f2f-4a2e-a2c8-ae731103b9b4",
+      "Title": "Strings.resx",
+      "IsModified": false,
+      "IsLargeFile": false,
+      "Path": "E:\\src\\Bascanka\\src\\Bascanka.App\\Resources\\Strings.resx",
+      "IsDeferredLoad": true,
+      "Caret": 4024,
+      "Scroll": 103,
+      "Zoom": 0,
+      "Language": ""
+    },
+    {
+      "Id": "c421e7bd-19d3-4273-b770-66e925b6d69a",
+      "Title": "EditorTextRenderer.cs",
+      "IsModified": false,
+      "IsLargeFile": false,
+      "Path": "E:\\src\\Bascanka\\src\\Bascanka.Editor\\Rendering\\EditorTextRenderer.cs",
+      "IsDeferredLoad": true,
+      "Caret": 3406,
+      "Scroll": 74,
+      "Zoom": 0,
+      "Language": "csharp"
+    },
+    {
+      "Id": "2d12f9a1-c3aa-46c5-91dd-5eb06fa2280c",
+      "Title": "cjk_stress_test.txt",
+      "IsModified": false,
+      "IsLargeFile": false,
+      "Path": "E:\\vs code\\Bascanka\\test-files\\cjk_stress_test.txt",
+      "IsDeferredLoad": true,
+      "Caret": 451,
+      "Scroll": 0,
+      "Zoom": 0,
+      "Language": ""
+    },
+    {
+      "Id": "2412873f-de8c-48b4-971b-a753e2ce2175",
+      "Title": "emoji-test.txt",
+      "IsModified": false,
+      "IsLargeFile": false,
+      "Path": "E:\\vs code\\Bascanka\\test-files\\emoji-test.txt",
+      "IsDeferredLoad": true,
+      "Caret": 527,
+      "Scroll": 14,
+      "Zoom": 0,
+      "WordWrap": 1,
+      "Language": ""
+    },
+    {
+      "Id": "2e546c19-a8cd-476e-811b-bc5fdce311c2",
+      "Title": "Untitled UNIX.txt",
+      "IsModified": false,
+      "IsLargeFile": false,
+      "Path": "E:\\Untitled UNIX.txt",
+      "IsDeferredLoad": true,
+      "Caret": 493,
+      "Scroll": 0,
+      "Zoom": 0,
+      "Language": "",
+      "CustomProfileName": "Linux Commands"
+    },
+    {
+      "Id": "7c8d4011-b027-42cd-945a-a4395129f542",
+      "Title": "html-js-test.html",
+      "IsModified": false,
+      "IsLargeFile": false,
+      "Path": "E:\\vs code\\Bascanka\\test-files\\html-js-test.html",
+      "Caret": 7343,
+      "Scroll": 129,
+      "Zoom": 0,
+      "Language": "html",
+      "LineEnding": "LF",
+      "EncodingCodePage": 65001,
+      "HasBom": false
+    }
+  ],
+  "Version": 1,
+  "WindowHeight": 1185,
+  "WindowMaximized": 0,
+  "WindowWidth": 1952,
+  "WindowX": 240,
+  "WindowY": 206
+}

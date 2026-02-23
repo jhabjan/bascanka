@@ -44,13 +44,24 @@ public sealed class MainForm : Form
     // ── Sub-managers ─────────────────────────────────────────────────
     private readonly MenuBuilder _menuBuilder;
     private readonly StatusBarManager _statusBarManager;
-    private readonly SessionManager _sessionManager;
     private readonly RecentFilesManager _recentFilesManager;
     private readonly FileWatcher _fileWatcher;
     private readonly PluginHost _pluginHost;
     private readonly KeyboardShortcutManager _shortcutManager;
     private readonly CustomHighlightStore _customHighlightStore;
     private readonly RecoveryManager _recoveryManager;
+
+    // ── Deferred large-file recovery data ─────────────────────────────
+    // When a modified large file is restored from crash recovery but its tab
+    // is not the active tab, we defer the expensive async loading until the
+    // tab is first activated.  The recovery metadata is stashed here and
+    // consumed by LoadDeferredTab.
+    private sealed record DeferredRecoveryData(
+        string AddBuffer, IReadOnlyList<Piece> Pieces,
+        int CodePage, bool HasBom, string? LineEnding, string? Language,
+        long SavedCaret, int SavedScroll, int SavedZoom,
+        Guid? RecoveryTabId, bool WordWrap, string? CustomProfileName);
+    private readonly Dictionary<string, DeferredRecoveryData> _deferredRecovery = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Document state ───────────────────────────────────────────────
     private readonly List<TabInfo> _tabs = new();
@@ -87,6 +98,7 @@ public sealed class MainForm : Form
         // Load all persisted settings into static properties.
         LoadAllSettings();
         ApplyThemeOverridesFromRegistry();
+        FindReplacePanel.LoadSearchHistoryFromDisk();
 
         // ── Form properties ──────────────────────────────────────────
         Text = Strings.AppTitle;
@@ -211,7 +223,6 @@ public sealed class MainForm : Form
         RegisterDefaultShortcuts();
 
         _statusBarManager = new StatusBarManager(_statusStrip);
-        _sessionManager = new SessionManager();
         _recentFilesManager = new RecentFilesManager();
         _fileWatcher = new FileWatcher(this);
         _pluginHost = new PluginHost(this);
@@ -229,7 +240,7 @@ public sealed class MainForm : Form
         ApplyLocalizedMenuTexts();
 
         // Restore window geometry from previous session (before OnLoad).
-        _sessionManager.RestoreWindowState(this);
+        _recoveryManager.RestoreWindowState();
 
         // Rebuild the entire UI when the user switches language.
         LocalizationManager.LanguageChanged += OnUILanguageChanged;
@@ -259,6 +270,8 @@ public sealed class MainForm : Form
     public TabInfo? ActiveTab => _activeTabIndex >= 0 && _activeTabIndex < _tabs.Count
         ? _tabs[_activeTabIndex]
         : null;
+
+    public bool CanToggleWordWrap => ActiveTab is not null && IsWordWrapAllowed(ActiveTab);
 
     /// <summary>Gets the tab strip control.</summary>
     internal TabStrip TabStrip => _tabStrip;
@@ -374,29 +387,47 @@ public sealed class MainForm : Form
         try
         {
             long fileSize = new FileInfo(path).Length;
+            System.Text.Encoding? forcedBinaryTextEncoding = null;
 
             // Binary detection: read only the first 8 KB instead of the whole file.
             if (IsBinaryFileFromStream(path))
             {
-                byte[] rawBytes = File.ReadAllBytes(path);
-                OpenBinaryFile(path, rawBytes);
-                return;
+                string? mode = ResolveBinaryOpenMode(path, fileSize);
+                if (mode is null) return; // cancelled
+                if (mode == "hex")
+                {
+                    if (fileSize > 100 * 1024 * 1024)
+                    {
+                        MessageBox.Show(this,
+                            string.Format(Strings.BinaryFileTooLargeForHex, fileSize / (1024 * 1024)),
+                            Strings.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    byte[] rawBytes = File.ReadAllBytes(path);
+                    OpenBinaryFile(path, rawBytes);
+                    return;
+                }
+                // mode == "text": fall through with forced Latin-1 encoding
+                //                 to avoid misdetecting binary as Chinese/GB18030.
+                forcedBinaryTextEncoding = System.Text.Encoding.GetEncoding(1252);
             }
 
             // ── Large file path: memory-mapped + async ──────────────────
             if (fileSize > LargeFileThreshold)
             {
-                OpenLargeFile(path, fileSize);
+                OpenLargeFile(path, fileSize, forcedBinaryTextEncoding);
                 return;
             }
 
             // ── Small file path: existing sync pipeline ─────────────────
             byte[] smallRawBytes = File.ReadAllBytes(path);
 
-            // Detect encoding.
-            var encoding = EncodingDetector.DetectEncoding(smallRawBytes.AsSpan());
+            // Detect encoding (skip detection for known-binary opened as text).
+            var encoding = forcedBinaryTextEncoding
+                ?? EncodingDetector.DetectEncoding(smallRawBytes.AsSpan());
             byte[] preamble = encoding.GetPreamble();
-            bool hasBom = preamble.Length > 0 && smallRawBytes.Length >= preamble.Length
+            bool hasBom = forcedBinaryTextEncoding is null
+                && preamble.Length > 0 && smallRawBytes.Length >= preamble.Length
                 && smallRawBytes.AsSpan(0, preamble.Length).SequenceEqual(preamble);
 
             string text = encoding.GetString(smallRawBytes);
@@ -488,11 +519,14 @@ public sealed class MainForm : Form
         tab.FilePath = dialog.FileName;
         tab.Title = Path.GetFileName(dialog.FileName);
 
-        // Detect language for the new extension.
-        string ext = Path.GetExtension(dialog.FileName);
-        ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
-        if (lexer is not null)
-            tab.Editor.SetLexer(lexer);
+        // Detect language for the new extension only when no custom profile is active.
+        if (tab.SelectedCustomProfileName is null)
+        {
+            string ext = Path.GetExtension(dialog.FileName);
+            ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
+            if (lexer is not null)
+                tab.Editor.SetLexer(lexer);
+        }
 
         SaveDocument(tab);
 
@@ -722,6 +756,9 @@ public sealed class MainForm : Form
                 tab.Editor.SetLexer(lexer);
         }
 
+        tab.SelectedCustomProfileName = null;
+        tab.PendingCustomProfileName = null;
+
         UpdateStatusBar();
         _menuBuilder.RefreshLanguageMenu(this);
     }
@@ -740,7 +777,12 @@ public sealed class MainForm : Form
 
         var profile = _customHighlightStore.FindByName(name);
         if (profile is not null)
+        {
             tab.Editor.SetCustomHighlighting(profile);
+            tab.SelectedCustomProfileName = profile.Name;
+            tab.PendingCustomProfileName = profile.Name;
+            tab.PendingLanguage = null;
+        }
 
         UpdateStatusBar();
         _menuBuilder.RefreshLanguageMenu(this);
@@ -761,6 +803,10 @@ public sealed class MainForm : Form
         {
             var profile = _customHighlightStore.FindByName(tab.Editor.CustomProfileName);
             tab.Editor.SetCustomHighlighting(profile); // null clears it if deleted
+            tab.SelectedCustomProfileName = tab.Editor.CustomProfileName;
+            tab.PendingCustomProfileName = tab.Editor.CustomProfileName;
+            if (tab.Editor.CustomProfileName is not null)
+                tab.PendingLanguage = null;
         }
 
         UpdateStatusBar();
@@ -825,12 +871,24 @@ public sealed class MainForm : Form
     /// </summary>
     public void ToggleWordWrap()
     {
-        if (ActiveTab is not null)
+        var tab = ActiveTab;
+        if (tab is null) return;
+
+        if (!tab.Editor.WordWrap)
         {
-            ActiveTab.Editor.WordWrap = !ActiveTab.Editor.WordWrap;
-            SettingsManager.SetBool(SettingsManager.KeyWordWrap, ActiveTab.Editor.WordWrap);
-            _menuBuilder.UpdateMenuState(this);
+            if (!IsWordWrapAllowed(tab))
+                return;
+
+            tab.Editor.WordWrap = true;
+            SettingsManager.SetBool(SettingsManager.KeyWordWrap, true);
         }
+        else
+        {
+            tab.Editor.WordWrap = false;
+            SettingsManager.SetBool(SettingsManager.KeyWordWrap, false);
+        }
+
+        _menuBuilder.UpdateMenuState(this);
     }
 
     /// <summary>
@@ -1362,6 +1420,7 @@ public sealed class MainForm : Form
         // Performance
         LargeFileThreshold = (long)SettingsManager.GetInt(SettingsManager.KeyLargeFileThresholdMB, 10) * 1024 * 1024;
         EditorControl.FoldingMaxFileSize = (long)SettingsManager.GetInt(SettingsManager.KeyFoldingMaxFileSizeMB, 50) * 1_000_000;
+        WordWrapMaxFileSizeBytes = (long)SettingsManager.GetInt(SettingsManager.KeyWordWrapMaxFileSizeMB, 50) * 1024 * 1024;
         RecentFilesManager.MaxRecentFiles = SettingsManager.GetInt(SettingsManager.KeyMaxRecentFiles, 20);
         FindReplacePanel.ConfigMaxHistoryItems = SettingsManager.GetInt(SettingsManager.KeySearchHistoryLimit, 25);
         EditorControl.DefaultSearchDebounce = SettingsManager.GetInt(SettingsManager.KeySearchDebounce, 300);
@@ -1537,19 +1596,11 @@ public sealed class MainForm : Form
             SettingsManager.SetString(SettingsManager.KeyTheme, ThemeManager.Instance.CurrentTheme.Name);
         };
 
-        // Restore previous session (or crash recovery), then open any command-line files on top.
-        if (RecoveryManager.HasRecoveryData() && _recoveryManager.RestoreFromRecovery())
+        // Restore previous session from the recovery manifest, then open any command-line files on top.
+        if (!_recoveryManager.RestoreFromRecovery() && _initialFiles.Length == 0)
         {
-            // Crash recovery succeeded.
-        }
-        else
-        {
-            // Try to restore previous session.
-            if (!_sessionManager.RestoreSession(this) && _initialFiles.Length == 0)
-            {
-                // No session to restore and no files to open; create a new empty document.
-                NewDocument();
-            }
+            // No session to restore and no files to open; create a new empty document.
+            NewDocument();
         }
 
         // Open files from command line (on top of the restored session).
@@ -1613,32 +1664,19 @@ public sealed class MainForm : Form
         // Stop the recovery timer — we'll do a final write below.
         _recoveryManager.Stop();
 
-        bool hasModified = _tabs.Any(t => t.IsModified);
-
-        if (hasModified)
+        // Force a final snapshot so the manifest stays up to date and dirty tabs survive exit.
+        foreach (var tab in _tabs)
         {
-            // Force a final recovery snapshot so dirty tabs survive the exit.
-            // Mark all modified tabs dirty so the final tick writes their content.
-            foreach (var tab in _tabs)
-            {
-                if (tab.IsModified)
-                    _recoveryManager.MarkDirty(tab.Id);
-            }
-            _recoveryManager.ForceWrite();
-            // Do NOT clean up recovery data — next launch will restore it.
+            if (tab.IsModified)
+                _recoveryManager.MarkDirty(tab.Id);
         }
-        else
-        {
-            // No unsaved work — delete recovery data for a clean start.
-            _recoveryManager.CleanUp();
-        }
+        _recoveryManager.ForceWrite();
         _recoveryManager.Dispose();
 
         // Stop terminal process.
         _terminalPanel?.Stop();
 
-        // Save session and shutdown plugins.
-        _sessionManager.SaveSession(this);
+        // Shutdown plugins.
         _pluginHost.Shutdown();
         _fileWatcher.Dispose();
         _singleInstance?.Dispose();
@@ -1795,6 +1833,47 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Creates a deferred tab for a modified large file from crash recovery.
+    /// The expensive async MMF scanning is delayed until the tab is activated.
+    /// </summary>
+    internal void AddDeferredRecoveryLargeTab(
+        string path, string addBuffer, IReadOnlyList<Piece> pieces,
+        int codePage, bool hasBom, string? lineEnding, string? language,
+        long savedCaret, int savedScroll, int savedZoom,
+        Guid? recoveryTabId, bool wordWrap, string? customProfileName)
+    {
+        var editor = new EditorControl();
+        editor.Theme = ThemeManager.Instance.CurrentTheme;
+
+        var tab = new TabInfo
+        {
+            Id = recoveryTabId ?? Guid.NewGuid(),
+            Title = Path.GetFileName(path),
+            FilePath = path,
+            IsModified = true,
+            Editor = editor,
+            IsDeferredLoad = true,
+            PendingZoom = savedZoom,
+            PendingScroll = savedScroll,
+            PendingCaret = savedCaret,
+            PendingWordWrap = wordWrap ? true : null,
+            PendingLanguage = language,
+            PendingCustomProfileName = customProfileName,
+            PendingRecoveryFormat = "pieces",
+            PendingEncodingCodePage = codePage,
+            PendingHasBom = hasBom,
+            PendingLineEnding = lineEnding,
+        };
+
+        _deferredRecovery[path] = new DeferredRecoveryData(
+            addBuffer, pieces, codePage, hasBom, lineEnding, language,
+            savedCaret, savedScroll, savedZoom, recoveryTabId, wordWrap, customProfileName);
+
+        _tabs.Add(tab);
+        _tabStrip.AddTab(tab, select: false);
+    }
+
+    /// <summary>
     /// Asynchronously restores a large MMF-backed tab from recovery data.
     /// Creates a placeholder tab immediately, scans the file incrementally on a
     /// background thread, then reconstructs the piece table from recovery pieces.
@@ -1916,7 +1995,8 @@ public sealed class MainForm : Form
                 }
 
                 tab.Editor.FileSizeBytes = batchResult.ScannedBytes;
-                _statusBarManager.ShowLoadingProgress(batchResult.ScannedBytes, fileSize);
+                if (ActiveTab == tab)
+                    _statusBarManager.ShowLoadingProgress(batchResult.ScannedBytes, fileSize);
 
                 if (!done)
                     batchSize = SubsequentBatchChunks;
@@ -1940,7 +2020,7 @@ public sealed class MainForm : Form
 
             if (savedZoom != 0)
                 tab.Editor.ZoomLevel = savedZoom;
-            if (wordWrap)
+            if (wordWrap && IsWordWrapAllowed(tab))
                 tab.Editor.WordWrap = true;
 
             if (!string.IsNullOrEmpty(customProfileName))
@@ -1958,7 +2038,8 @@ public sealed class MainForm : Form
 
             RefreshTabDisplay(tab);
             UpdateTitleBar();
-            UpdateStatusBar();
+            if (ActiveTab == tab)
+                UpdateStatusBar();
             _menuBuilder.RefreshEncodingMenu(this);
         }
         catch (Exception ex)
@@ -1980,6 +2061,28 @@ public sealed class MainForm : Form
 
         if (!File.Exists(path))
             return;
+
+        // Check for deferred recovery data (modified large file from crash recovery).
+        if (_deferredRecovery.Remove(path, out var recovery))
+        {
+            long fileSize = new FileInfo(path).Length;
+            int idx = _tabs.IndexOf(tab);
+            if (idx >= 0)
+            {
+                _tabs.RemoveAt(idx);
+                _tabStrip.RemoveTab(idx);
+                _deferredInsertIndex = idx;
+            }
+            RestoreLargeFileFromRecovery(
+                path, fileSize,
+                recovery.AddBuffer, recovery.Pieces,
+                recovery.CodePage, recovery.HasBom, recovery.LineEnding, recovery.Language,
+                recovery.SavedCaret, recovery.SavedScroll,
+                recovery.SavedZoom, recovery.RecoveryTabId, recovery.WordWrap,
+                recovery.CustomProfileName);
+            _deferredInsertIndex = -1;
+            return;
+        }
 
         try
         {
@@ -2022,9 +2125,12 @@ public sealed class MainForm : Form
             WireEditorEvents(tab.Editor);
 
             string ext = Path.GetExtension(path);
-            ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
-            if (lexer is not null)
-                tab.Editor.SetLexer(lexer);
+            if (tab.SelectedCustomProfileName is null)
+            {
+                ILexer? lexer = LexerRegistry.Instance.GetLexerByExtension(ext);
+                if (lexer is not null)
+                    tab.Editor.SetLexer(lexer);
+            }
 
             _fileWatcher.Watch(tab);
         }
@@ -2048,7 +2154,14 @@ public sealed class MainForm : Form
         {
             var profile = _customHighlightStore.FindByName(tab.PendingCustomProfileName);
             if (profile is not null)
+            {
                 tab.Editor.SetCustomHighlighting(profile);
+                tab.SelectedCustomProfileName = profile.Name;
+            }
+            else
+            {
+                tab.SelectedCustomProfileName = null;
+            }
             tab.PendingCustomProfileName = null;
             tab.PendingLanguage = null;
         }
@@ -2062,6 +2175,7 @@ public sealed class MainForm : Form
                 if (lexer is not null)
                     tab.Editor.SetLexer(lexer);
             }
+            tab.SelectedCustomProfileName = null;
             tab.PendingLanguage = null;
         }
 
@@ -2075,7 +2189,7 @@ public sealed class MainForm : Form
             tab.Editor.ScrollMgr.FirstVisibleLine = tab.PendingScroll;
         if (tab.PendingCaret > 0 && tab.PendingCaret <= tab.Editor.GetBufferLength())
             tab.Editor.CaretOffset = tab.PendingCaret;
-        if (tab.PendingWordWrap == true)
+        if (tab.PendingWordWrap == true && IsWordWrapAllowed(tab))
             tab.Editor.WordWrap = true;
 
         tab.PendingZoom = 0;
@@ -2119,6 +2233,15 @@ public sealed class MainForm : Form
             // User cancelled the UAC prompt.
             return false;
         }
+    }
+
+    private static bool IsWordWrapAllowed(TabInfo tab)
+    {
+        if (WordWrapMaxFileSizeBytes <= 0)
+            return true;
+
+        long size = tab.Editor.FileSizeBytes;
+        return size <= 0 || size <= WordWrapMaxFileSizeBytes;
     }
 
     /// <summary>
@@ -3301,6 +3424,35 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Resolves how a binary file should be opened: "hex", "text", or null (cancelled).
+    /// Checks saved per-extension preferences first; if none, shows the dialog.
+    /// </summary>
+    private string? ResolveBinaryOpenMode(string path, long fileSize)
+    {
+        string ext = Path.GetExtension(path).ToLowerInvariant();
+
+        // Check saved preference.
+        string? saved = SettingsManager.GetBinaryExtPref(ext);
+        if (saved is not null)
+            return saved;
+
+        // Show dialog.
+        string fileName = Path.GetFileName(path);
+        using var dlg = new BinaryFileOpenDialog(fileName, ext);
+        dlg.ApplyTheme(ThemeManager.Instance.CurrentTheme);
+
+        if (dlg.ShowDialog(this) != DialogResult.OK)
+            return null;
+
+        string mode = dlg.IsHexMode ? "hex" : "text";
+
+        if (dlg.RememberChoice && !string.IsNullOrEmpty(ext))
+            SettingsManager.SetBinaryExtPref(ext, mode);
+
+        return mode;
+    }
+
+    /// <summary>
     /// Opens a binary file in hex-only mode (no text editor).
     /// </summary>
     private void OpenBinaryFile(string path, byte[] rawBytes)
@@ -3393,6 +3545,7 @@ public sealed class MainForm : Form
     /// on a background thread. Configurable via Settings.
     /// </summary>
     private static long LargeFileThreshold { get; set; } = 10L * 1024 * 1024;
+    private static long WordWrapMaxFileSizeBytes { get; set; } = 50L * 1024 * 1024;
 
     /// <summary>
     /// Auto-save interval for crash recovery, in seconds. Configurable via Settings.
@@ -3434,6 +3587,8 @@ public sealed class MainForm : Form
     /// via a small <see cref="FileStream"/> instead of loading the entire file.
     /// Files with a UTF-16/UTF-32 BOM are not considered binary even though
     /// they naturally contain null bytes.
+    /// Recognises known binary file signatures (PDF, ZIP, PE, etc.) in
+    /// addition to the null-byte heuristic.
     /// </summary>
     private static bool IsBinaryFileFromStream(string path)
     {
@@ -3458,6 +3613,10 @@ public sealed class MainForm : Form
             buffer[2] == 0xFE && buffer[3] == 0xFF)
             return false;
 
+        // Known binary file signatures (magic bytes).
+        if (HasBinarySignature(buffer.AsSpan(0, bytesRead)))
+            return true;
+
         for (int i = 0; i < bytesRead; i++)
         {
             if (buffer[i] == 0)
@@ -3467,13 +3626,91 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Checks for well-known binary file magic bytes at the start of the buffer.
+    /// </summary>
+    private static bool HasBinarySignature(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 4) return false;
+
+        // PDF: %PDF
+        if (data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46)
+            return true;
+
+        // PE executable: MZ
+        if (data[0] == 0x4D && data[1] == 0x5A)
+            return true;
+
+        // ZIP / DOCX / XLSX / JAR / APK: PK\x03\x04
+        if (data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04)
+            return true;
+
+        // GZip: \x1F\x8B
+        if (data[0] == 0x1F && data[1] == 0x8B)
+            return true;
+
+        // PNG: \x89PNG
+        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+            return true;
+
+        // JPEG: \xFF\xD8\xFF
+        if (data.Length >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
+            return true;
+
+        // GIF: GIF8
+        if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38)
+            return true;
+
+        // BMP: BM
+        if (data[0] == 0x42 && data[1] == 0x4D)
+            return true;
+
+        // TIFF: II\x2A\x00 or MM\x00\x2A
+        if ((data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00) ||
+            (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A))
+            return true;
+
+        // WebP: RIFF....WEBP
+        if (data.Length >= 12 &&
+            data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+            data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50)
+            return true;
+
+        // 7-Zip: 7z\xBC\xAF\x27\x1C
+        if (data.Length >= 6 &&
+            data[0] == 0x37 && data[1] == 0x7A && data[2] == 0xBC && data[3] == 0xAF &&
+            data[4] == 0x27 && data[5] == 0x1C)
+            return true;
+
+        // RAR: Rar!
+        if (data[0] == 0x52 && data[1] == 0x61 && data[2] == 0x72 && data[3] == 0x21)
+            return true;
+
+        // ELF: \x7FELF
+        if (data[0] == 0x7F && data[1] == 0x45 && data[2] == 0x4C && data[3] == 0x46)
+            return true;
+
+        // Mach-O: \xFE\xED\xFA\xCE / \xFE\xED\xFA\xCF / \xCE\xFA\xED\xFE / \xCF\xFA\xED\xFE
+        if ((data[0] == 0xFE && data[1] == 0xED && data[2] == 0xFA && (data[3] == 0xCE || data[3] == 0xCF)) ||
+            ((data[0] == 0xCE || data[0] == 0xCF) && data[1] == 0xFA && data[2] == 0xED && data[3] == 0xFE))
+            return true;
+
+        // WASM: \x00asm
+        if (data[0] == 0x00 && data[1] == 0x61 && data[2] == 0x73 && data[3] == 0x6D)
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
     /// Opens a large file with incremental progressive loading.  The user sees
     /// content appear and grow as chunks are scanned in the background.
     /// </summary>
-    private async void OpenLargeFile(string path, long fileSize)
+    private async void OpenLargeFile(string path, long fileSize,
+        System.Text.Encoding? forcedEncoding = null)
     {
         // 1. Create tab immediately with an empty document.
         var editor = new EditorControl(new PieceTable(string.Empty));
+        editor.FileSizeBytes = fileSize;
         editor.Theme = ThemeManager.Instance.CurrentTheme;
         editor.IsReadOnly = true;
         WireEditorEvents(editor);
@@ -3501,7 +3738,8 @@ public sealed class MainForm : Form
         {
             // 2. Create MMF source with deferred scanning.
             var source = await Task.Run(() =>
-                new MemoryMappedFileSource(path, normalizeLineEndings: true, deferScan: true));
+                new MemoryMappedFileSource(path, encoding: forcedEncoding,
+                    normalizeLineEndings: true, deferScan: true));
 
             // 3. Incremental scanning loop — scan batches and swap the document
             //    so the user can scroll further with each pass.
@@ -3577,7 +3815,8 @@ public sealed class MainForm : Form
                 }
 
                 tab.Editor.FileSizeBytes = source.ScannedBytes;
-                _statusBarManager.ShowLoadingProgress(source.ScannedBytes, fileSize);
+                if (ActiveTab == tab)
+                    _statusBarManager.ShowLoadingProgress(source.ScannedBytes, fileSize);
 
                 if (!done)
                     batchSize = SubsequentBatchChunks;
@@ -3595,7 +3834,8 @@ public sealed class MainForm : Form
             if (lexer is not null)
                 tab.Editor.SetLexer(lexer);
 
-            UpdateStatusBar();
+            if (ActiveTab == tab)
+                UpdateStatusBar();
             _menuBuilder.RefreshEncodingMenu(this);
             _pluginHost.RaiseDocumentOpened(path);
         }
