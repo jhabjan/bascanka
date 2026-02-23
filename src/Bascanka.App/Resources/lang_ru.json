@@ -361,6 +361,24 @@
     "CustomHighlightImportSuccess": "Успешно импортировано профилей: {0}.",
     "CustomHighlightImportError": "Выбранный файл не содержит корректных профилей подсветки.",
     "CustomHighlightPickColor": "Выбрать цвет...",
-    "CustomHighlightClearColor": "Очистить цвет"
+    "CustomHighlightClearColor": "Очистить цвет",
+
+    "BinaryFileDetected": "Похоже, файл \"{0}\" является двоичным.\nКак вы хотите его открыть?",
+    "BinaryOpenAsHex": "Открыть как &Hex",
+    "BinaryOpenAsText": "Открыть как &Текст",
+    "BinaryRememberForExt": "Запомнить для этого расширения ({0})",
+    "BinaryRememberNoExt": "Запомнить для файлов без расширения",
+    "BinaryFileTooLargeForHex": "Этот файл слишком большой ({0} МБ) для просмотра в шестнадцатеричном виде.",
+
+    "SettingsCategoryFiles": "Файлы",
+    "SettingsBinaryExtPrefs": "Параметры двоичных файлов",
+    "SettingsBinaryExtPrefsDesc": "Сохранённые параметры по расширениям для открытия двоичных файлов. Дважды щёлкните по столбцу «Режим открытия», чтобы изменить.",
+    "SettingsBinaryExtColExt": "Расширение",
+    "SettingsBinaryExtColMode": "Режим открытия",
+    "SettingsBinaryExtModeHex": "Hex‑редактор",
+    "SettingsBinaryExtModeText": "Текстовый редактор",
+    "SettingsBinaryExtDelete": "Удалить",
+    "SettingsBinaryExtClearAll": "Очистить всё",
+    "SettingsBinaryExtClearConfirm": "Вы уверены, что хотите очистить все параметры расширений для двоичных файлов?"
   }
 }
