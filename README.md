@@ -128,6 +128,19 @@ dotnet publish "src\Bascanka.App\Bascanka.App.csproj" -c Release -r win-x64 -p:P
 dotnet publish "src\Bascanka.App\Bascanka.App.csproj" -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=false
 ```
 
+##### Consider adding `-p:PublishReadyToRun=true`
+
+`PublishReadyToRun=true` precompiles much of your app’s IL into native code **during publish**.
+That means the app does **less JIT compilation at startup** and when code runs for the first time, so you typically get:
+
+- **Faster startup time** (often noticeable for WinForms apps)
+- **Less CPU spike on first launch / first UI actions**
+- **No trimming / reflection compatibility issues** (unlike Native AOT)
+
+Trade-offs:
+- Publish output is **larger** (often +10–30%)
+- Publish can take a bit longer
+
 ## Run
 
 ```
