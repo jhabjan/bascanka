@@ -361,6 +361,24 @@
     "CustomHighlightImportSuccess": "{0} profile(s) imported successfully.",
     "CustomHighlightImportError": "The selected file does not contain valid highlighting profiles.",
     "CustomHighlightPickColor": "Pick Color...",
-    "CustomHighlightClearColor": "Clear Color"
+    "CustomHighlightClearColor": "Clear Color",
+
+    "BinaryFileDetected": "The file \"{0}\" appears to be a binary file.\nHow would you like to open it?",
+    "BinaryOpenAsHex": "Open as Hex",
+    "BinaryOpenAsText": "Open as Text",
+    "BinaryRememberForExt": "Remember for this extension ({0})",
+    "BinaryRememberNoExt": "Remember for files without extension",
+    "BinaryFileTooLargeForHex": "This file is too large ({0} MB) for hex view.",
+
+    "SettingsCategoryFiles": "Files",
+    "SettingsBinaryExtPrefs": "Binary File Preferences",
+    "SettingsBinaryExtPrefsDesc": "Saved per-extension preferences for how binary files should be opened. Double-click the Open Mode column to change.",
+    "SettingsBinaryExtColExt": "Extension",
+    "SettingsBinaryExtColMode": "Open Mode",
+    "SettingsBinaryExtModeHex": "Hex Editor",
+    "SettingsBinaryExtModeText": "Text Editor",
+    "SettingsBinaryExtDelete": "Delete",
+    "SettingsBinaryExtClearAll": "Clear All",
+    "SettingsBinaryExtClearConfirm": "Are you sure you want to clear all binary file extension preferences?"
   }
 }
