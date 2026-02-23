@@ -1,4 +1,5 @@
 using Bascanka.Core.Syntax.Lexers;
+using System.Reflection;
 
 namespace Bascanka.Core.Syntax;
 
@@ -69,24 +70,17 @@ public sealed class LexerRegistry
     /// </summary>
     public void RegisterBuiltInLexers()
     {
-        Register(new JsonLexer());
-        Register(new CSharpLexer());
-        Register(new JavaScriptLexer());
-        Register(new TypeScriptLexer());
-        Register(new PythonLexer());
-        Register(new HtmlLexer());
-        Register(new CssLexer());
-        Register(new XmlLexer());
-        Register(new SqlLexer());
-        Register(new BashLexer());
-        Register(new CLexer());
-        Register(new CppLexer());
-        Register(new JavaLexer());
-        Register(new PhpLexer());
-        Register(new RubyLexer());
-        Register(new GoLexer());
-        Register(new RustLexer());
-        Register(new MarkdownLexer());
-        Register(new CobolLexer());
+        Assembly asm = typeof(LexerRegistry).Assembly;
+        var types = asm
+            .GetTypes()
+            .Where(t => t.IsClass && ! t.IsAbstract && t.Namespace == "Bascanka.Core.Syntax.Lexers")
+            .ToList();
+        foreach (var type in types)
+        {
+            if (Activator.CreateInstance(type) is ILexer instance)
+            {
+                Register(instance);
+            }
+        }      
     }
 }
