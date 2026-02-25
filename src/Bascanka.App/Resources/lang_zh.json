@@ -199,10 +199,10 @@
     "SettingsMenuItemPaddingUnit": "px",
     "SettingsTerminalPadding": "终端内边距",
     "SettingsTerminalPaddingUnit": "px",
-    "SettingsSearchDebounce": "搜索防抖",
-    "SettingsSearchDebounceUnit": "ms",
+    "SettingsSearchDebounce": "搜索防抖延时",
+    "SettingsSearchDebounceUnit": "毫秒",
     "SettingsAutoSaveInterval": "自动保存间隔",
-    "SettingsAutoSaveIntervalUnit": "s",
+    "SettingsAutoSaveIntervalUnit": "秒",
 
     "SettingsCategoryAppearance": "外观",
 
@@ -361,6 +361,24 @@
     "CustomHighlightImportSuccess": "成功导入 {0} 个配置文件。",
     "CustomHighlightImportError": "所选文件不包含有效的高亮配置文件。",
     "CustomHighlightPickColor": "选择颜色...",
-    "CustomHighlightClearColor": "清除颜色"
+    "CustomHighlightClearColor": "清除颜色",
+
+    "BinaryFileDetected": "该文件 \"{0}\" 似乎是二进制文件。\n您希望如何打开它？",
+    "BinaryOpenAsHex": "十六进制",
+    "BinaryOpenAsText": "文本模式",
+    "BinaryRememberForExt": "记住该扩展名的选择 ({0})",
+    "BinaryRememberNoExt": "记住无扩展名文件的打开方式",
+    "BinaryFileTooLargeForHex": "该文件过大 ({0} MB) 无法使用Hex模式打开.",
+
+    "SettingsCategoryFiles": "文件",
+    "SettingsBinaryExtPrefs": "文件首选项",
+    "SettingsBinaryExtPrefsDesc": "这里是已保存的文件扩展名对应的打开模式。双击‘打开模式’列即可更改。",
+    "SettingsBinaryExtColExt": "扩展名",
+    "SettingsBinaryExtColMode": "打开模式",
+    "SettingsBinaryExtModeHex": "十六进制",
+    "SettingsBinaryExtModeText": "文本模式",
+    "SettingsBinaryExtDelete": "删除",
+    "SettingsBinaryExtClearAll": "全部清除",
+    "SettingsBinaryExtClearConfirm": "您确定要清除所有文件扩展名关联的打开模式吗?"
   }
 }
