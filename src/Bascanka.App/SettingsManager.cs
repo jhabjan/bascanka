@@ -58,7 +58,7 @@ internal static class SettingsManager
             }
         }
         catch { }
-        return new Dictionary<string, JsonElement>();
+        return [];
     }
 
     // ── Atomic save ─────────────────────────────────────────────────
@@ -105,12 +105,12 @@ internal static class SettingsManager
             using var mainKey = Registry.CurrentUser.OpenSubKey(RegistryKeyPath);
             if (mainKey is null) // Fresh install, no registry data.
             {
-                _settingsCache = new Dictionary<string, JsonElement>();
+                _settingsCache = [];
                 return;
             }
 
             // Migrate main settings.
-            _settingsCache = new Dictionary<string, JsonElement>();
+            _settingsCache = [];
             foreach (string name in mainKey.GetValueNames())
             {
                 var val = mainKey.GetValue(name);
@@ -129,7 +129,7 @@ internal static class SettingsManager
         catch
         {
             // If migration fails, start with empty caches.
-            _settingsCache ??= new Dictionary<string, JsonElement>();
+            _settingsCache ??= [];
         }
     }
 
@@ -419,7 +419,7 @@ internal static class SettingsManager
     {
         try
         {
-            _settingsCache = new Dictionary<string, JsonElement>();
+            _settingsCache = [];
             if (File.Exists(SettingsFilePath))
                 File.Delete(SettingsFilePath);
         }

@@ -5,23 +5,16 @@ namespace Bascanka.Core.Buffer;
 /// <summary>
 /// Event arguments for the <see cref="PieceTable.TextChanged"/> event.
 /// </summary>
-public sealed class TextChangedEventArgs : EventArgs
+public sealed class TextChangedEventArgs(long offset, long oldLength, long newLength) : EventArgs
 {
     /// <summary>Character offset where the change starts.</summary>
-    public long Offset { get; }
+    public long Offset { get; } = offset;
 
     /// <summary>Number of characters that were removed.</summary>
-    public long OldLength { get; }
+    public long OldLength { get; } = oldLength;
 
     /// <summary>Number of characters that were inserted.</summary>
-    public long NewLength { get; }
-
-    public TextChangedEventArgs(long offset, long oldLength, long newLength)
-    {
-        Offset = offset;
-        OldLength = oldLength;
-        NewLength = newLength;
-    }
+    public long NewLength { get; } = newLength;
 }
 
 /// <summary>
@@ -146,7 +139,7 @@ public sealed class PieceTable : IDisposable
     /// </summary>
     public void Insert(long offset, string text)
     {
-        if (text is null) throw new ArgumentNullException(nameof(text));
+        ArgumentNullException.ThrowIfNull(text);
         if (text.Length == 0) return;
         if (offset < 0 || offset > Length)
             throw new ArgumentOutOfRangeException(nameof(offset));
@@ -352,14 +345,14 @@ public sealed class PieceTable : IDisposable
             int lfIndex = chunk.IndexOf('\n', pos);
             if (lfIndex >= 0)
             {
-                results[i] = (chunk.Substring(pos, lfIndex - pos), offset);
+                results[i] = (chunk[pos..lfIndex], offset);
                 offset += (lfIndex - pos) + 1; // +1 for '\n'
                 pos = lfIndex + 1;
             }
             else
             {
                 // Last line (no trailing '\n').
-                results[i] = (chunk.Substring(pos), offset);
+                results[i] = (chunk[pos..], offset);
                 break;
             }
         }

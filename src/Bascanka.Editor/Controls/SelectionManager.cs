@@ -352,7 +352,7 @@ public sealed class SelectionManager
             int charLeft = CompressedColumnAt(lineText, leftExpCol, tabSize);
             int charRight = CompressedColumnAt(lineText, rightExpCol, tabSize);
             if (charRight > charLeft)
-                result.Add(lineText.Substring(charLeft, charRight - charLeft));
+                result.Add(lineText[charLeft..charRight]);
             else
                 result.Add(string.Empty);
         }

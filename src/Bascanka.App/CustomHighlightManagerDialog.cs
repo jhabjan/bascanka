@@ -38,7 +38,7 @@ public sealed class CustomHighlightManagerDialog : Form
         _theme = theme;
 
         // Deep copy profiles so edits are non-destructive until save.
-        _profiles = new List<CustomHighlightProfile>();
+        _profiles = [];
         foreach (var p in store.Profiles)
         {
             var copy = new CustomHighlightProfile { Name = p.Name };

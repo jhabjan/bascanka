@@ -12,6 +12,7 @@
     <RootNamespace>Bascanka.App</RootNamespace>
     <Copyright>© 2026 Josip Habjan. All rights reserved.</Copyright>
     <Version>1.0.5</Version>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
     <None Remove="Resources\AppxManifest.xml.template" />

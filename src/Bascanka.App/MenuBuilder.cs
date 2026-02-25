@@ -42,7 +42,7 @@ public sealed class MenuBuilder
     // Text menu — the whole menu is toggled based on hasTab.
     private ToolStripMenuItem? _textMenu;
     // Text menu items that require a selection.
-    private readonly List<ToolStripMenuItem> _textSelectionItems = new();
+    private readonly List<ToolStripMenuItem> _textSelectionItems = [];
 
     // View menu items for checkmark toggling.
     private ToolStripMenuItem? _wordWrapItem;
@@ -73,7 +73,7 @@ public sealed class MenuBuilder
         menuStrip.Items.Add(BuildEncodingMenu(form));
         menuStrip.Items.Add(BuildLanguageMenu(form));
         menuStrip.Items.Add(BuildToolsMenu(form));
-        _pluginsMenuItem = BuildPluginsMenu(form);
+        _pluginsMenuItem = BuildPluginsMenu();
         menuStrip.Items.Add(_pluginsMenuItem);
         menuStrip.Items.Add(BuildHelpMenu(form));
     }
@@ -671,7 +671,7 @@ public sealed class MenuBuilder
         menu.DropDownItems.Add(new ToolStripSeparator());
 
         menu.DropDownItems.Add(MakeItem(Strings.MenuOpenAppData, Keys.None,
-            () => form.OpenAppDataFolder()));
+            () => MainForm.OpenAppDataFolder()));
 
         menu.DropDownItems.Add(new ToolStripSeparator());
 
@@ -686,15 +686,15 @@ public sealed class MenuBuilder
     /// </summary>
     public void UpdateMacroMenuState(bool isRecording)
     {
-        if (_recordMacroItem is not null) _recordMacroItem.Enabled = !isRecording;
-        if (_stopRecordingItem is not null) _stopRecordingItem.Enabled = isRecording;
-        if (_playMacroItem is not null) _playMacroItem.Enabled = !isRecording;
-        if (_macroManagerItem is not null) _macroManagerItem.Enabled = !isRecording;
+        _recordMacroItem?.Enabled = !isRecording;
+        _stopRecordingItem?.Enabled = isRecording;
+        _playMacroItem?.Enabled = !isRecording;
+        _macroManagerItem?.Enabled = !isRecording;
     }
 
     // ── Plugins Menu ─────────────────────────────────────────────────
 
-    private ToolStripMenuItem BuildPluginsMenu(MainForm form)
+    private ToolStripMenuItem BuildPluginsMenu()
     {
         _pluginsMenu = new ToolStripMenuItem(Strings.MenuPlugins);
 
@@ -730,52 +730,48 @@ public sealed class MenuBuilder
         var editor = tab?.Editor;
 
         // File menu.
-        if (_saveItem is not null) _saveItem.Enabled = hasTab && tab!.IsModified;
-        if (_saveAsItem is not null) _saveAsItem.Enabled = hasTab;
-        if (_saveAllItem is not null) _saveAllItem.Enabled = hasTab;
-        if (_printItem is not null) _printItem.Enabled = hasTab;
-        if (_printPreviewItem is not null) _printPreviewItem.Enabled = hasTab;
+        _saveItem?.Enabled = hasTab && tab!.IsModified;
+        _saveAsItem?.Enabled = hasTab;
+        _saveAllItem?.Enabled = hasTab;
+        _printItem?.Enabled = hasTab;
+        _printPreviewItem?.Enabled = hasTab;
 
         // Edit menu.
-        if (_undoItem is not null) _undoItem.Enabled = hasTab && editor!.History.CanUndo;
-        if (_redoItem is not null) _redoItem.Enabled = hasTab && editor!.History.CanRedo;
-        if (_cutItem is not null) _cutItem.Enabled = hasTab && editor!.SelectionMgr.HasSelection;
-        if (_copyItem is not null) _copyItem.Enabled = hasTab && editor!.SelectionMgr.HasSelection;
-        if (_deleteItem is not null) _deleteItem.Enabled = hasTab && editor!.SelectionMgr.HasSelection;
-        if (_pasteItem is not null) _pasteItem.Enabled = hasTab;
-        if (_selectAllItem is not null) _selectAllItem.Enabled = hasTab;
-        if (_findItem is not null) _findItem.Enabled = hasTab;
-        if (_replaceItem is not null) _replaceItem.Enabled = hasTab;
-        if (_findInFilesItem is not null) _findInFilesItem.Enabled = hasTab;
-        if (_goToLineItem is not null) _goToLineItem.Enabled = hasTab;
+        _undoItem?.Enabled = hasTab && editor!.History.CanUndo;
+        _redoItem?.Enabled = hasTab && editor!.History.CanRedo;
+        _cutItem?.Enabled = hasTab && editor!.SelectionMgr.HasSelection;
+        _copyItem?.Enabled = hasTab && editor!.SelectionMgr.HasSelection;
+        _deleteItem?.Enabled = hasTab && editor!.SelectionMgr.HasSelection;
+        _pasteItem?.Enabled = hasTab;
+        _selectAllItem?.Enabled = hasTab;
+        _findItem?.Enabled = hasTab;
+        _replaceItem?.Enabled = hasTab;
+        _findInFilesItem?.Enabled = hasTab;
+        _goToLineItem?.Enabled = hasTab;
 
         // Text menu.
-        if (_textMenu is not null) _textMenu.Enabled = hasTab;
+        _textMenu?.Enabled = hasTab;
         bool hasSelection = hasTab && editor!.SelectionMgr.HasSelection;
         foreach (var item in _textSelectionItems)
             item.Enabled = hasSelection;
 
         // View menu checkmarks.
-        if (_wordWrapItem is not null)
-        {
-            _wordWrapItem.Checked = hasTab && editor!.WordWrap;
-            _wordWrapItem.Enabled = hasTab && form.CanToggleWordWrap;
-        }
-        if (_showWhitespaceItem is not null) _showWhitespaceItem.Checked = hasTab && editor!.ShowWhitespace;
-        if (_lineNumbersItem is not null) _lineNumbersItem.Checked = !hasTab || editor!.ShowLineNumbers;
+
+        _wordWrapItem?.Checked = hasTab && editor!.WordWrap;
+        _wordWrapItem?.Enabled = hasTab && form.CanToggleWordWrap;
+
+        _showWhitespaceItem?.Checked = hasTab && editor!.ShowWhitespace;
+        _lineNumbersItem?.Checked = !hasTab || editor!.ShowLineNumbers;
 
         // Bottom panel checkmarks.
-        if (_findResultsItem is not null)
-            _findResultsItem.Checked = form.IsBottomPanelVisible && form.IsFindResultsTabActive;
-        if (_terminalItem is not null)
-            _terminalItem.Checked = form.IsBottomPanelVisible && form.IsTerminalTabActive;
+        _findResultsItem?.Checked = form.IsBottomPanelVisible && form.IsFindResultsTabActive;
+        _terminalItem?.Checked = form.IsBottomPanelVisible && form.IsTerminalTabActive;
 
         // Tools menu.
-        if (_hexEditorItem is not null)
-        {
-            _hexEditorItem.Enabled = hasTab;
-            _hexEditorItem.Checked = hasTab && tab!.Editor.IsHexPanelVisible;
-        }
+
+        _hexEditorItem?.Enabled = hasTab;
+        _hexEditorItem?.Checked = hasTab && tab!.Editor.IsHexPanelVisible;
+
     }
 
     /// <summary>
@@ -783,8 +779,7 @@ public sealed class MenuBuilder
     /// </summary>
     public void SetPluginsMenuVisible(bool visible)
     {
-        if (_pluginsMenuItem is not null)
-            _pluginsMenuItem.Visible = visible;
+        _pluginsMenuItem?.Visible = visible;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

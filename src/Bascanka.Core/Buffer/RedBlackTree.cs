@@ -18,13 +18,13 @@ public enum NodeColor : byte
 /// and is augmented with subtree-level statistics so that character-offset and
 /// line-number look-ups run in O(log N).
 /// </summary>
-public sealed class RBNode
+public sealed class RBNode(Piece piece, NodeColor color)
 {
     /// <summary>The piece descriptor stored in this node.</summary>
-    public Piece Piece;
+    public Piece Piece = piece;
 
     /// <summary>Node color used for red-black balancing.</summary>
-    public NodeColor Color;
+    public NodeColor Color = color;
 
     public RBNode? Left;
     public RBNode? Right;
@@ -43,12 +43,6 @@ public sealed class RBNode
     /// Updated on every structural change (insert, delete, rotation).
     /// </summary>
     public long LeftSubtreeLineFeeds;
-
-    public RBNode(Piece piece, NodeColor color)
-    {
-        Piece = piece;
-        Color = color;
-    }
 
     public override string ToString() =>
         $"RBNode({Piece}, {Color}, LeftLen={LeftSubtreeLength}, LeftLF={LeftSubtreeLineFeeds})";
@@ -121,8 +115,7 @@ public sealed class RedBlackTree : IEnumerable<Piece>
     /// </returns>
     public (RBNode Node, long OffsetInNode) FindByOffset(long offset)
     {
-        if (offset < 0)
-            throw new ArgumentOutOfRangeException(nameof(offset));
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
 
         RBNode current = Root;
         long remaining = offset;
@@ -165,8 +158,7 @@ public sealed class RedBlackTree : IEnumerable<Piece>
     /// </remarks>
     public (RBNode Node, long OffsetInNode) FindByLine(long lineNumber)
     {
-        if (lineNumber < 0)
-            throw new ArgumentOutOfRangeException(nameof(lineNumber));
+        ArgumentOutOfRangeException.ThrowIfNegative(lineNumber);
 
         if (lineNumber == 0)
         {
@@ -850,8 +842,8 @@ public sealed class RedBlackTree : IEnumerable<Piece>
         // For now, we set them to -1 as a marker that they need recomputation.
         // The PieceTable.SplitPiece method will fix these up.
 
-        Piece leftPiece = new Piece(orig.BufferType, orig.Start, leftLen, -1);
-        Piece rightPiece = new Piece(orig.BufferType, orig.Start + leftLen, rightLen, -1);
+        Piece leftPiece = new(orig.BufferType, orig.Start, leftLen, -1);
+        Piece rightPiece = new(orig.BufferType, orig.Start + leftLen, rightLen, -1);
 
         node.Piece = leftPiece;
         RecomputeAugmentation(node);

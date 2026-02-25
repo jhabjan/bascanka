@@ -10,19 +10,14 @@ namespace Bascanka.App;
 /// to support hot-reloading. Also loads .csx script plugins via <see cref="ScriptCompiler"/>.
 /// Implements all host-side plugin API interfaces.
 /// </summary>
-public sealed class PluginHost : IEditorHost, IMenuApi, IPanelApi, IBufferApi, IDocumentApi, IStatusBarApi
+public sealed class PluginHost(MainForm form) : IEditorHost, IMenuApi, IPanelApi, IBufferApi, IDocumentApi, IStatusBarApi
 {
-    private readonly MainForm _form;
-    private readonly List<LoadedPlugin> _plugins = new();
+    private readonly MainForm _form = form;
+    private readonly List<LoadedPlugin> _plugins = [];
     private readonly ScriptCompiler _scriptCompiler = new();
 
     private static readonly string PluginsDirectory =
         Path.Combine(AppContext.BaseDirectory, "plugins");
-
-    public PluginHost(MainForm form)
-    {
-        _form = form;
-    }
 
     // ── IEditorHost ──────────────────────────────────────────────────
 
@@ -75,7 +70,7 @@ public sealed class PluginHost : IEditorHost, IMenuApi, IPanelApi, IBufferApi, I
             Width = 75,
         };
 
-        dialog.Controls.AddRange(new Control[] { label, textBox, btnOk, btnCancel });
+        dialog.Controls.AddRange([label, textBox, btnOk, btnCancel]);
         dialog.AcceptButton = btnOk;
         dialog.CancelButton = btnCancel;
 
@@ -344,7 +339,7 @@ public sealed class PluginHost : IEditorHost, IMenuApi, IPanelApi, IBufferApi, I
         {
             try
             {
-                Assembly? asm = _scriptCompiler.Compile(csxPath);
+                Assembly? asm = ScriptCompiler.Compile(csxPath);
                 if (asm is not null)
                     InitializePluginsFromAssembly(asm, csxPath, loadContext: null);
             }
@@ -478,15 +473,9 @@ public sealed class PluginHost : IEditorHost, IMenuApi, IPanelApi, IBufferApi, I
     /// Isolated, collectible <see cref="AssemblyLoadContext"/> for loading plugin assemblies.
     /// This allows plugins to be unloaded at runtime.
     /// </summary>
-    private sealed class PluginLoadContext : AssemblyLoadContext
+    private sealed class PluginLoadContext(string pluginPath) : AssemblyLoadContext(isCollectible: true)
     {
-        private readonly AssemblyDependencyResolver _resolver;
-
-        public PluginLoadContext(string pluginPath)
-            : base(isCollectible: true)
-        {
-            _resolver = new AssemblyDependencyResolver(pluginPath);
-        }
+        private readonly AssemblyDependencyResolver _resolver = new(pluginPath);
 
         protected override Assembly? Load(AssemblyName assemblyName)
         {

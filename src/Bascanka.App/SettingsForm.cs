@@ -281,7 +281,7 @@ internal sealed class SettingsForm : Form
 
         // Caret Scroll Buffer
         _caretScrollBufferNum = CreateNumeric(0, 20, 1, SettingsManager.GetInt(SettingsManager.KeyCaretScrollBuffer, EditorControl.DefaultCaretScrollBuffer));
-        y = AddLabeledControl(panel, Strings.SettingsCaretScrollBuffer, _caretScrollBufferNum, Strings.SettingsCaretScrollBufferUnit, y, Strings.SettingsCaretScrollBufferDesc);
+        AddLabeledControl(panel, Strings.SettingsCaretScrollBuffer, _caretScrollBufferNum, Strings.SettingsCaretScrollBufferUnit, y, Strings.SettingsCaretScrollBufferDesc);
 
         return panel;
     }
@@ -459,7 +459,7 @@ internal sealed class SettingsForm : Form
 
         // Terminal Padding
         _terminalPaddingNum = CreateNumeric(0, 24, 1, SettingsManager.GetInt(SettingsManager.KeyTerminalPadding, TerminalPanel.DefaultTerminalPadding));
-        y = AddLabeledControl(panel, Strings.SettingsTerminalPadding, _terminalPaddingNum, Strings.SettingsTerminalPaddingUnit, y, Strings.SettingsTerminalPaddingDesc);
+        AddLabeledControl(panel, Strings.SettingsTerminalPadding, _terminalPaddingNum, Strings.SettingsTerminalPaddingUnit, y, Strings.SettingsTerminalPaddingDesc);
 
         return panel;
     }
@@ -495,7 +495,7 @@ internal sealed class SettingsForm : Form
 
         // Auto-Save Interval
         _autoSaveIntervalNum = CreateNumeric(1, 300, 5, SettingsManager.GetInt(SettingsManager.KeyAutoSaveInterval, RecoveryManager.DefaultIntervalSeconds));
-        y = AddLabeledControl(panel, Strings.SettingsAutoSaveInterval, _autoSaveIntervalNum, Strings.SettingsAutoSaveIntervalUnit, y, Strings.SettingsAutoSaveIntervalDesc);
+        AddLabeledControl(panel, Strings.SettingsAutoSaveInterval, _autoSaveIntervalNum, Strings.SettingsAutoSaveIntervalUnit, y, Strings.SettingsAutoSaveIntervalDesc);
 
         return panel;
     }
@@ -1119,8 +1119,10 @@ internal sealed class SettingsForm : Form
         _binaryExtPrefsList.Items.Clear();
         foreach (var (ext, mode) in SettingsManager.GetAllBinaryExtPrefs())
         {
-            var item = new ListViewItem([ext, BinaryModeDisplayName(mode)]);
-            item.Tag = mode; // store raw value for toggling
+            var item = new ListViewItem([ext, BinaryModeDisplayName(mode)])
+            {
+                Tag = mode // store raw value for toggling
+            };
             _binaryExtPrefsList.Items.Add(item);
         }
     }

@@ -143,7 +143,7 @@ public sealed class EditorControl : UserControl
     public event EventHandler? CaretPositionChanged;
 
     /// <summary>Raised when the selection changes.</summary>
-    public new event EventHandler? SelectionChanged;
+    public event EventHandler? SelectionChanged;
 
     /// <summary>Raised when the zoom level changes.</summary>
     public event EventHandler? ZoomChanged;
@@ -176,16 +176,19 @@ public sealed class EditorControl : UserControl
         _theme = new DarkTheme();
 
         // Create managers.
-        _caretManager = new CaretManager { Document = _document };
-        _caretManager.ColumnToExpandedColumn = (docLine, col) =>
+        _caretManager = new CaretManager
         {
-            long lineLen = _document.GetLineLength(docLine);
-            int clampedCol = (int)Math.Min(Math.Max(0, col), lineLen);
-            if (lineLen > UltraLongLineInteractiveThreshold)
-                return clampedCol * _surface.CharWidth;
+            Document = _document,
+            ColumnToExpandedColumn = (docLine, col) =>
+            {
+                long lineLen = _document.GetLineLength(docLine);
+                int clampedCol = (int)Math.Min(Math.Max(0, col), lineLen);
+                if (lineLen > UltraLongLineInteractiveThreshold)
+                    return clampedCol * _surface.CharWidth;
 
-            string text = _document.GetLine(docLine);
-            return _surface.ColumnToPixelOffset(text, Math.Min(clampedCol, text.Length));
+                string text = _document.GetLine(docLine);
+                return _surface.ColumnToPixelOffset(text, Math.Min(clampedCol, text.Length));
+            }
         };
         _selectionManager = new SelectionManager { Document = _document };
         _scrollManager = new ScrollManager();
@@ -313,7 +316,7 @@ public sealed class EditorControl : UserControl
         get => _document;
         set
         {
-            if (value is null) throw new ArgumentNullException(nameof(value));
+            ArgumentNullException.ThrowIfNull(value);
 
             // Unwire and dispose old document.
             PieceTable oldDocument = _document;
@@ -737,15 +740,12 @@ public sealed class EditorControl : UserControl
         _hexPanelVisible = true;
 
         // Create hex editor if not yet created.
-        if (_hexEditor is null)
-        {
-            _hexEditor = new HexEditorControl
+        _hexEditor ??= new HexEditorControl
             {
                 Dock = DockStyle.Fill,
                 Theme = _theme,
                 IsReadOnly = _readOnly,
             };
-        }
 
         _hexEditor.Data = data;
 
@@ -1023,7 +1023,7 @@ public sealed class EditorControl : UserControl
             _customProfileName = null;
             _customBlockRegions = null;
             _surface.CustomBlockRegions = null;
-            _foldingManager.SetRegions(Enumerable.Empty<FoldRegion>());
+            _foldingManager.SetRegions([]);
         }
         _surface.CustomHighlightMatcher = _customHighlightMatcher;
         Invalidate(true);
@@ -1037,8 +1037,10 @@ public sealed class EditorControl : UserControl
     {
         if (_findPanel is null)
         {
-            _findPanel = new FindReplacePanel();
-            _findPanel.Theme = _theme;
+            _findPanel = new FindReplacePanel
+            {
+                Theme = _theme
+            };
 
             _findPanel.NavigateToMatch += OnFindNavigateToMatch;
             _findPanel.PanelClosed += OnFindPanelClosed;
@@ -1220,8 +1222,7 @@ public sealed class EditorControl : UserControl
         _hexSplit.Panel2.Controls.Add(_hexEditor);
         Controls.Add(_hexSplit);
 
-        if (_findPanel is not null)
-            _findPanel.BringToFront();
+        _findPanel?.BringToFront();
 
         _hexSplit.Panel1MinSize = 100;
         _hexSplit.Panel2MinSize = 100;
@@ -2095,7 +2096,7 @@ public sealed class EditorControl : UserControl
         }
     }
 
-    private void DetectLanguageFromContent()
+    private static void DetectLanguageFromContent()
     {
         // Placeholder for shebang / modeline detection.
     }
@@ -2440,7 +2441,7 @@ public sealed class EditorControl : UserControl
         DirtyChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private readonly List<ToolStripItem> _ctxSelectionItems = new();
+    private readonly List<ToolStripItem> _ctxSelectionItems = [];
 
     private void OnContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -2519,11 +2520,9 @@ public sealed class EditorControl : UserControl
     /// Custom renderer for the editor context menu that uses theme colours
     /// for background, hover highlight, text, and separators.
     /// </summary>
-    private sealed class ThemedContextMenuRenderer : ToolStripProfessionalRenderer
+    private sealed class ThemedContextMenuRenderer(ITheme theme) : ToolStripProfessionalRenderer
     {
-        private readonly ITheme _theme;
-
-        public ThemedContextMenuRenderer(ITheme theme) => _theme = theme;
+        private readonly ITheme _theme = theme;
 
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
         {
@@ -2596,31 +2595,20 @@ public sealed class EditorControl : UserControl
 /// Event arguments for the Find All operation, carrying the search options
 /// so that MainForm can run the search with progress reporting.
 /// </summary>
-public sealed class FindAllEventArgs : EventArgs
+public sealed class FindAllEventArgs(string searchPattern, SearchOptions options) : EventArgs
 {
     /// <summary>The search pattern that was used.</summary>
-    public string SearchPattern { get; }
+    public string SearchPattern { get; } = searchPattern;
 
     /// <summary>The search options to use.</summary>
-    public SearchOptions Options { get; }
-
-    public FindAllEventArgs(string searchPattern, SearchOptions options)
-    {
-        SearchPattern = searchPattern;
-        Options = options ?? throw new ArgumentNullException(nameof(options));
-    }
+    public SearchOptions Options { get; } = options ?? throw new ArgumentNullException(nameof(options));
 }
 
 /// <summary>
 /// Event arguments for the Find All in Tabs operation, carrying the search options.
 /// </summary>
-public sealed class FindAllInTabsEventArgs : EventArgs
+public sealed class FindAllInTabsEventArgs(SearchOptions options) : EventArgs
 {
     /// <summary>The search options to use for the multi-tab search.</summary>
-    public SearchOptions Options { get; }
-
-    public FindAllInTabsEventArgs(SearchOptions options)
-    {
-        Options = options ?? throw new ArgumentNullException(nameof(options));
-    }
+    public SearchOptions Options { get; } = options ?? throw new ArgumentNullException(nameof(options));
 }
