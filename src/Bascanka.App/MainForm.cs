@@ -64,7 +64,7 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, DeferredRecoveryData> _deferredRecovery = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Document state ───────────────────────────────────────────────
-    private readonly List<TabInfo> _tabs = new();
+    private readonly List<TabInfo> _tabs = [];
     private int _activeTabIndex = -1;
     private int _deferredInsertIndex = -1;
     private int _untitledCounter;
@@ -87,7 +87,7 @@ public sealed class MainForm : Form
     /// </summary>
     public MainForm(string[]? filesToOpen = null, SingleInstanceManager? singleInstance = null)
     {
-        _initialFiles = filesToOpen ?? Array.Empty<string>();
+        _initialFiles = filesToOpen ?? [];
         _singleInstance = singleInstance;
 
         // Restore saved theme before any controls are created.
@@ -116,8 +116,11 @@ public sealed class MainForm : Form
 
         // ── Create layout controls ───────────────────────────────────
         _menuStrip = new MenuStrip { Dock = DockStyle.Top };
-        _tabStrip = new TabStrip { Dock = DockStyle.Top };
-        _tabStrip.ContextMenuRenderer = t => new ThemedMenuRenderer(t);
+        _tabStrip = new TabStrip
+        {
+            Dock = DockStyle.Top,
+            ContextMenuRenderer = t => new ThemedMenuRenderer(t)
+        };
         _statusStrip = new StatusStrip { Dock = DockStyle.Bottom };
 
         _sidePanel = new Panel
@@ -149,13 +152,17 @@ public sealed class MainForm : Form
         _bottomTabStrip = new BottomPanelTabStrip { Dock = DockStyle.Top };
         _bottomContentPanel = new Panel { Dock = DockStyle.Fill };
 
-        _findResultsPanel = new FindResultsPanel { Dock = DockStyle.Fill, Visible = false };
-        _findResultsPanel.ContextMenuRenderer = t => new ThemedMenuRenderer(t);
-        _findResultsPanel.ShowHeader = false;
+        _findResultsPanel = new FindResultsPanel
+        {
+            Dock = DockStyle.Fill,
+            Visible = false,
+            ContextMenuRenderer = t => new ThemedMenuRenderer(t),
+            ShowHeader = false
+        };
         _findResultsPanel.NavigateToResult += OnNavigateToFindResult;
         _findResultsPanel.OpenResultsInNewTab += OnOpenFindResultsInNewTab;
         _findResultsPanel.PageChanging += (_, _) =>
-            _searchOverlay.ShowOverlay(this, "Loading results...", indeterminate: true);
+            _searchOverlay.ShowOverlay(this, "Loading results...");
         _findResultsPanel.PageChanged += (_, _) => _searchOverlay.HideOverlay();
 
         _bottomContentPanel.Controls.Add(_findResultsPanel);
@@ -322,8 +329,10 @@ public sealed class MainForm : Form
         string title = string.Format(Strings.UntitledDocument, _untitledCounter);
 
         var pieceTable = new PieceTable(string.Empty);
-        var editor = new EditorControl(pieceTable);
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
+        var editor = new EditorControl(pieceTable)
+        {
+            Theme = ThemeManager.Instance.CurrentTheme
+        };
         if (EditorControl.DefaultWordWrap)
             editor.WordWrap = true;
         WireEditorEvents(editor);
@@ -392,7 +401,7 @@ public sealed class MainForm : Form
             // Binary detection: read only the first 8 KB instead of the whole file.
             if (IsBinaryFileFromStream(path))
             {
-                string? mode = ResolveBinaryOpenMode(path, fileSize);
+                string? mode = ResolveBinaryOpenMode(path);
                 if (mode is null) return; // cancelled
                 if (mode == "hex")
                 {
@@ -439,11 +448,13 @@ public sealed class MainForm : Form
             var (normalizedText, detectedLineEnding) = NormalizeLineEndings(text);
 
             var pieceTable = new PieceTable(normalizedText);
-            var editor = new EditorControl(pieceTable);
-            editor.FileSizeBytes = fileSize;
-            editor.Theme = ThemeManager.Instance.CurrentTheme;
-            editor.EncodingManager = new EncodingManager(encoding, hasBom);
-            editor.LineEnding = detectedLineEnding;
+            var editor = new EditorControl(pieceTable)
+            {
+                FileSizeBytes = fileSize,
+                Theme = ThemeManager.Instance.CurrentTheme,
+                EncodingManager = new EncodingManager(encoding, hasBom),
+                LineEnding = detectedLineEnding
+            };
             WireEditorEvents(editor);
 
             // Detect language from file extension.
@@ -997,8 +1008,12 @@ public sealed class MainForm : Form
     {
         if (_bottomTabStrip.HasTab("terminal")) return;
 
-        _terminalPanel = new TerminalPanel { Dock = DockStyle.Fill, Visible = false };
-        _terminalPanel.Theme = ThemeManager.Instance.CurrentTheme;
+        _terminalPanel = new TerminalPanel
+        {
+            Dock = DockStyle.Fill,
+            Visible = false,
+            Theme = ThemeManager.Instance.CurrentTheme
+        };
         _bottomContentPanel.Controls.Add(_terminalPanel);
 
         _bottomTabStrip.AddTab(new BottomPanelTab
@@ -1055,8 +1070,7 @@ public sealed class MainForm : Form
     private void ShowSelectedBottomTab()
     {
         _findResultsPanel.Visible = _bottomTabStrip.SelectedTabId == "findResults";
-        if (_terminalPanel is not null)
-            _terminalPanel.Visible = _bottomTabStrip.SelectedTabId == "terminal";
+        _terminalPanel?.Visible = _bottomTabStrip.SelectedTabId == "terminal";
     }
 
     /// <summary>
@@ -1128,8 +1142,10 @@ public sealed class MainForm : Form
         string title = $"Find Results {_untitledCounter}";
 
         var pieceTable = new PieceTable(text);
-        var editor = new EditorControl(pieceTable);
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
+        var editor = new EditorControl(pieceTable)
+        {
+            Theme = ThemeManager.Instance.CurrentTheme
+        };
         WireEditorEvents(editor);
 
         var tab = new TabInfo
@@ -1194,16 +1210,16 @@ public sealed class MainForm : Form
 
     private System.Drawing.Printing.PrintDocument CreatePrintDocument()
     {
-        var tab = ActiveTab;
-        if (tab is null) throw new InvalidOperationException("No active tab.");
-
+        var tab = ActiveTab ?? throw new InvalidOperationException("No active tab.");
         string text = tab.Editor.Document.ToString();
         _printLines = text.Split('\n');
         _printLineIndex = 0;
         _printTitle = tab.Title;
 
-        var doc = new System.Drawing.Printing.PrintDocument();
-        doc.DocumentName = _printTitle;
+        var doc = new System.Drawing.Printing.PrintDocument
+        {
+            DocumentName = _printTitle
+        };
         doc.PrintPage += OnPrintPage;
         _printDoc = doc;
         return doc;
@@ -1301,7 +1317,7 @@ public sealed class MainForm : Form
     /// <summary>
     /// Opens the %AppData%\Bascanka folder in Windows Explorer.
     /// </summary>
-    public void OpenAppDataFolder()
+    public static void OpenAppDataFolder()
     {
         string path = SettingsManager.AppDataFolder;
         Directory.CreateDirectory(path);
@@ -1430,7 +1446,7 @@ public sealed class MainForm : Form
     /// <summary>
     /// Shows a command palette-style dialog (placeholder for future implementation).
     /// </summary>
-    public void ShowCommandPalette()
+    public static void ShowCommandPalette()
     {
         // Future: implement a VS Code-style command palette.
         MessageBox.Show(
@@ -1651,11 +1667,11 @@ public sealed class MainForm : Form
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
     private const int WM_SETREDRAW = 0x000B;
-    private const int WM_CUT   = 0x0300;
-    private const int WM_COPY  = 0x0301;
+    private const int WM_CUT = 0x0300;
+    private const int WM_COPY = 0x0301;
     private const int WM_PASTE = 0x0302;
     private const int EM_SETSEL = 0x00B1;
-    private const int WM_UNDO  = 0x0304;
+    private const int WM_UNDO = 0x0304;
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
@@ -1793,8 +1809,10 @@ public sealed class MainForm : Form
     /// </summary>
     public void AddDeferredTab(string path, int zoom, int scroll, int caret, bool wordWrap = false)
     {
-        var editor = new EditorControl();
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
+        var editor = new EditorControl
+        {
+            Theme = ThemeManager.Instance.CurrentTheme
+        };
 
         var tab = new TabInfo
         {
@@ -1842,8 +1860,10 @@ public sealed class MainForm : Form
         long savedCaret, int savedScroll, int savedZoom,
         Guid? recoveryTabId, bool wordWrap, string? customProfileName)
     {
-        var editor = new EditorControl();
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
+        var editor = new EditorControl
+        {
+            Theme = ThemeManager.Instance.CurrentTheme
+        };
 
         var tab = new TabInfo
         {
@@ -1883,15 +1903,16 @@ public sealed class MainForm : Form
         string path, long fileSize,
         string addBuffer, IReadOnlyList<Piece> pieces,
         int codePage, bool hasBom, string? lineEnding, string? language,
-        long savedCaret, int savedScroll, int savedZoom,
-        Guid? recoveryTabId = null, bool wordWrap = false,
+        int savedZoom, Guid? recoveryTabId = null, bool wordWrap = false,
         string? customProfileName = null)
     {
         // 1. Create tab immediately with an empty document + read-only.
-        var editor = new EditorControl(new PieceTable(string.Empty));
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
-        editor.IsReadOnly = true;
-        editor.IsMemoryMappedDocument = true; // set early so recovery timer uses pieces format
+        var editor = new EditorControl(new PieceTable(string.Empty))
+        {
+            Theme = ThemeManager.Instance.CurrentTheme,
+            IsReadOnly = true,
+            IsMemoryMappedDocument = true // set early so recovery timer uses pieces format
+        };
         WireEditorEvents(editor);
 
         string ext = Path.GetExtension(path);
@@ -1934,7 +1955,7 @@ public sealed class MainForm : Form
 
             while (!done)
             {
-                var batchResult = await Task.Run(() =>
+                var (Done, Doc, ScannedBytes) = await Task.Run(() =>
                 {
                     bool d = source.ScanNextBatch(batchSize);
                     long scannedCharLen = source.Length;
@@ -1964,14 +1985,14 @@ public sealed class MainForm : Form
                         pt.PrecomputeLineOffsets();
                     }
 
-                    return (Done: d, Doc: pt, ScannedBytes: source.ScannedBytes);
+                    return (Done: d, Doc: pt, source.ScannedBytes);
                 });
 
-                done = batchResult.Done;
+                done = Done;
 
                 if (!_tabs.Contains(tab))
                 {
-                    batchResult.Doc.Dispose();
+                    Doc.Dispose();
                     return;
                 }
 
@@ -1981,7 +2002,7 @@ public sealed class MainForm : Form
                 SendMessage(tab.Editor.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
                 try
                 {
-                    tab.Editor.Document = batchResult.Doc;
+                    tab.Editor.Document = Doc;
 
                     long docLen = tab.Editor.Document.Length;
                     if (curCaret > 0 && curCaret <= docLen)
@@ -1994,9 +2015,9 @@ public sealed class MainForm : Form
                     tab.Editor.Invalidate(true);
                 }
 
-                tab.Editor.FileSizeBytes = batchResult.ScannedBytes;
+                tab.Editor.FileSizeBytes = ScannedBytes;
                 if (ActiveTab == tab)
-                    _statusBarManager.ShowLoadingProgress(batchResult.ScannedBytes, fileSize);
+                    _statusBarManager.ShowLoadingProgress(ScannedBytes, fileSize);
 
                 if (!done)
                     batchSize = SubsequentBatchChunks;
@@ -2077,7 +2098,6 @@ public sealed class MainForm : Form
                 path, fileSize,
                 recovery.AddBuffer, recovery.Pieces,
                 recovery.CodePage, recovery.HasBom, recovery.LineEnding, recovery.Language,
-                recovery.SavedCaret, recovery.SavedScroll,
                 recovery.SavedZoom, recovery.RecoveryTabId, recovery.WordWrap,
                 recovery.CustomProfileName);
             _deferredInsertIndex = -1;
@@ -2203,7 +2223,7 @@ public sealed class MainForm : Form
     /// the application as Administrator with the file path as argument.
     /// Returns true if the user accepted and the elevated process was launched.
     /// </summary>
-    private bool OfferAdminElevation(string path)
+    private static bool OfferAdminElevation(string path)
     {
         var result = MessageBox.Show(
             string.Format(Strings.ErrorAccessDenied, path),
@@ -2987,7 +3007,7 @@ public sealed class MainForm : Form
         ApplyEditorLocalization(editor);
     }
 
-    private void BuildEditorContextMenu(EditorControl editor)
+    private static void BuildEditorContextMenu(EditorControl editor)
     {
         var selectedTextMenu = new ToolStripMenuItem(Strings.CtxSelectedText);
 
@@ -3349,8 +3369,7 @@ public sealed class MainForm : Form
 
         // ── Bottom panel tab strip and terminal ─────────────────────
         _bottomTabStrip.Theme = theme;
-        if (_terminalPanel is not null)
-            _terminalPanel.Theme = theme;
+        _terminalPanel?.Theme = theme;
 
         // ── Symbol list panel ────────────────────────────────────────
         _symbolListPanel.Theme = theme;
@@ -3408,7 +3427,7 @@ public sealed class MainForm : Form
             ApplyEditorLocalization(tab.Editor);
     }
 
-    private void ApplyEditorLocalization(EditorControl editor)
+    private static void ApplyEditorLocalization(EditorControl editor)
     {
         editor.SetContextMenuTexts(
             Strings.CtxUndo, Strings.CtxRedo,
@@ -3427,7 +3446,7 @@ public sealed class MainForm : Form
     /// Resolves how a binary file should be opened: "hex", "text", or null (cancelled).
     /// Checks saved per-extension preferences first; if none, shows the dialog.
     /// </summary>
-    private string? ResolveBinaryOpenMode(string path, long fileSize)
+    private string? ResolveBinaryOpenMode(string path)
     {
         string ext = Path.GetExtension(path).ToLowerInvariant();
 
@@ -3458,9 +3477,11 @@ public sealed class MainForm : Form
     private void OpenBinaryFile(string path, byte[] rawBytes)
     {
         var pieceTable = new PieceTable(string.Empty);
-        var editor = new EditorControl(pieceTable);
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
-        editor.IsReadOnly = true;
+        var editor = new EditorControl(pieceTable)
+        {
+            Theme = ThemeManager.Instance.CurrentTheme,
+            IsReadOnly = true
+        };
         WireEditorEvents(editor);
         editor.ShowHexOnly(rawBytes);
 
@@ -3709,10 +3730,12 @@ public sealed class MainForm : Form
         System.Text.Encoding? forcedEncoding = null)
     {
         // 1. Create tab immediately with an empty document.
-        var editor = new EditorControl(new PieceTable(string.Empty));
-        editor.FileSizeBytes = fileSize;
-        editor.Theme = ThemeManager.Instance.CurrentTheme;
-        editor.IsReadOnly = true;
+        var editor = new EditorControl(new PieceTable(string.Empty))
+        {
+            FileSizeBytes = fileSize,
+            Theme = ThemeManager.Instance.CurrentTheme,
+            IsReadOnly = true
+        };
         WireEditorEvents(editor);
 
         string ext = Path.GetExtension(path);
@@ -3868,11 +3891,9 @@ public sealed class MainForm : Form
     /// incremental loading so that intermediate <see cref="PieceTable"/> instances
     /// can be disposed without releasing the shared underlying source.
     /// </summary>
-    private sealed class BorrowedTextSource : ITextSource, IPrecomputedLineFeeds
+    private sealed class BorrowedTextSource(MemoryMappedFileSource inner) : ITextSource, IPrecomputedLineFeeds
     {
-        private readonly MemoryMappedFileSource _inner;
-
-        public BorrowedTextSource(MemoryMappedFileSource inner) => _inner = inner;
+        private readonly MemoryMappedFileSource _inner = inner;
 
         public char this[long index] => _inner[index];
         public long Length => _inner.Length;
@@ -4021,7 +4042,7 @@ public sealed class MainForm : Form
         }
 
         /// <summary>Centers the overlay on the parent form and makes it visible.</summary>
-        public void ShowOverlay(Form parent, string? message = null, bool indeterminate = false)
+        public void ShowOverlay(Form parent, string? message = null)
         {
             _label.Text = message ?? "Searching...";
 

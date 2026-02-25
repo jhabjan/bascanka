@@ -445,7 +445,7 @@ public sealed class InputHandler
             return;
         }
 
-        string tabText = new string(' ', _tabSize);
+        string tabText = new(' ', _tabSize);
         DeleteSelectionIfAny();
 
         var cmd = new InsertCommand(_document, _caret.Offset, tabText);
@@ -498,7 +498,7 @@ public sealed class InputHandler
         var (startLine, _) = GetOffsetLineColumn(_selection.SelectionStart);
         var (endLine, _) = GetOffsetLineColumn(_selection.SelectionEnd - 1);
 
-        string indent = new string(' ', _tabSize);
+        string indent = new(' ', _tabSize);
         var commands = new List<ICommand>();
 
         // Process from bottom to top to keep offsets valid.
@@ -865,7 +865,7 @@ public sealed class InputHandler
                 int paddingNeeded = leftExpCol - ExpandedColumnAt(lineText, lineText.Length);
                 if (paddingNeeded > 0)
                 {
-                    string padding = new string(' ', paddingNeeded);
+                    string padding = new(' ', paddingNeeded);
                     commands.Add(new InsertCommand(_document, lineStart + lineText.Length, padding));
                 }
                 // After padding, insert at the padded position.
@@ -1128,7 +1128,7 @@ public sealed class InputHandler
                 int paddingNeeded = expCol - lineExpEnd;
                 if (paddingNeeded > 0)
                 {
-                    string padding = new string(' ', paddingNeeded);
+                    string padding = new(' ', paddingNeeded);
                     commands.Add(new InsertCommand(_document, lineStart + lineText.Length, padding));
                 }
                 commands.Add(new InsertCommand(_document, lineStart + lineText.Length + Math.Max(0, paddingNeeded), pasteText));

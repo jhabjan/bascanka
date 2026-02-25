@@ -31,7 +31,7 @@ public sealed class RecoveryManager : IDisposable
 
     private readonly MainForm _form;
     private readonly System.Windows.Forms.Timer _timer;
-    private readonly HashSet<Guid> _dirtyTabs = new();
+    private readonly HashSet<Guid> _dirtyTabs = [];
     private bool _saving;
     private bool _disposed;
 
@@ -86,7 +86,7 @@ public sealed class RecoveryManager : IDisposable
     /// <summary>
     /// Deletes the entire recovery directory (manifest + content files).
     /// </summary>
-    public void CleanUp()
+    public static void CleanUp()
     {
         ClearRecoveryData();
     }
@@ -153,7 +153,7 @@ public sealed class RecoveryManager : IDisposable
 
     // ── Per-tab content writing ──────────────────────────────────────
 
-    private void WriteTabContent(TabInfo tab)
+    private static void WriteTabContent(TabInfo tab)
     {
         string contentPath = Path.Combine(RecoveryDir, $"{tab.Id}.content");
         string tmpPath = contentPath + ".tmp";
@@ -524,8 +524,7 @@ public sealed class RecoveryManager : IDisposable
 
         // ── Modified tabs: need recovery content ─────────────────
 
-        Guid tabId;
-        if (!Guid.TryParse(idStr, out tabId)) return false;
+        if (!Guid.TryParse(idStr, out Guid tabId)) return false;
 
         string contentPath = Path.Combine(RecoveryDir, $"{tabId}.content");
         if (!File.Exists(contentPath))
@@ -552,8 +551,10 @@ public sealed class RecoveryManager : IDisposable
         {
             string text = File.ReadAllText(contentPath, new UTF8Encoding(false));
             var pieceTable = new PieceTable(text);
-            var editor = new EditorControl(pieceTable);
-            editor.Theme = ThemeManager.Instance.CurrentTheme;
+            var editor = new EditorControl(pieceTable)
+            {
+                Theme = ThemeManager.Instance.CurrentTheme
+            };
 
             string title = GetString(tabEl, "Title") ?? "Untitled";
 

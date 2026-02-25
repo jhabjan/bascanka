@@ -21,7 +21,7 @@ public sealed class ScriptCompiler
     /// </summary>
     /// <param name="csxPath">Absolute path to the .csx script file.</param>
     /// <returns>The compiled <see cref="Assembly"/>, or null on failure.</returns>
-    public Assembly? Compile(string csxPath)
+    public static Assembly? Compile(string csxPath)
     {
         if (!File.Exists(csxPath))
         {
@@ -150,9 +150,7 @@ public sealed class ScriptCompiler
             if (Directory.Exists(sdkDir))
             {
                 // Get the latest SDK version directory.
-                string[] sdkVersions = Directory.GetDirectories(sdkDir)
-                    .OrderByDescending(d => d)
-                    .ToArray();
+                string[] sdkVersions = [.. Directory.GetDirectories(sdkDir).OrderByDescending(d => d)];
 
                 foreach (string sdkVersion in sdkVersions)
                 {

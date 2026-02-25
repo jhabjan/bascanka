@@ -647,7 +647,7 @@ public sealed class EditorSurface : Control
         bool skipBulkLineRange = rangeCount == 1 &&
             _document.GetLineLength(minDocLine) > UltraLongLineThreshold;
         var lineData = skipBulkLineRange
-            ? Array.Empty<(string Text, long StartOffset)>()
+            ? []
             : _document.GetLineRange(minDocLine, rangeCount);
 
         // ── Pre-create reusable GDI brushes ─────────────────────────────
@@ -769,7 +769,7 @@ public sealed class EditorSurface : Control
                     int charsPerRow = _charWidth > 0 ? wrapPx / _charWidth : 80;
                     charClipStart = Math.Min(startRow * charsPerRow, lineText.Length);
                     int charClipEnd = Math.Min(charClipStart + charsPerScreen, lineText.Length);
-                    wrapText = lineText.Substring(charClipStart, charClipEnd - charClipStart);
+                    wrapText = lineText[charClipStart..charClipEnd];
                     expandedClipStart = startRow * wrapCols;
                     startRow = 0; // the clipped text starts at the row we want
                 }
@@ -894,8 +894,7 @@ public sealed class EditorSurface : Control
                     // Convert char-index segment bounds to visual columns for intersection.
                     int segVisColStart = CharIndexToVisualColumn(expanded, segStart) + expandedClipStart;
                     int segVisColEnd = CharIndexToVisualColumn(expanded, segStart + segLen) + expandedClipStart;
-                    RenderColumnSelectionBackgroundWrap(g, docLine, expanded, segStart,
-                        segVisColStart, segVisColEnd, y, selBrush);
+                    RenderColumnSelectionBackgroundWrap(g, docLine, segVisColStart, segVisColEnd, y, selBrush);
 
                     // Text rendering.
                     if (segLen > 0)
@@ -995,7 +994,7 @@ public sealed class EditorSurface : Control
                         : CharIndexAndPixelFromRawLine(lineText, hPixelOffset).CharIndex;
                     clipStart = Math.Clamp(charEstimate - 200, 0, lineText.Length);
                     int clipEnd = Math.Clamp(charEstimate + visibleWindow, clipStart, lineText.Length);
-                    renderText = lineText.Substring(clipStart, clipEnd - clipStart);
+                    renderText = lineText[clipStart..clipEnd];
                     renderLineStart = lineStartOffset + clipStart;
                 }
 
@@ -1143,7 +1142,7 @@ public sealed class EditorSurface : Control
 
         // Render caret.
         if (_wordWrap)
-            RenderCaretWrapped(g, firstVisible, firstLineWrapOffset, lineData, minDocLine, docLines, entryCount);
+            RenderCaretWrapped(g,  firstLineWrapOffset, lineData, minDocLine, docLines, entryCount);
         else
             RenderCaret(g, firstVisible, hPixelOffset);
     }
@@ -1265,7 +1264,7 @@ public sealed class EditorSurface : Control
 
         if (result.Spans is null or { Count: 0 })
         {
-            string visible = expanded.Substring(startCol, endCol - startCol);
+            string visible = expanded[startCol..endCol];
             DrawTextAligned(g, visible, _editorFont, ViewportX(0), y, defaultFg);
             return;
         }
@@ -1336,7 +1335,7 @@ public sealed class EditorSurface : Control
             if (cursor < spanStart && cursor < segEnd)
             {
                 int gapEnd = Math.Min(spanStart, segEnd);
-                string fragment = expanded.Substring(cursor, gapEnd - cursor);
+                string fragment = expanded[cursor..gapEnd];
                 int x = ViewportX(DisplayX(expanded, segStart, cursor));
                 DrawTextAligned(g, fragment, _editorFont, x, y, defaultFg);
             }
@@ -1345,7 +1344,7 @@ public sealed class EditorSurface : Control
             int drawEnd = Math.Min(spanEnd, segEnd);
             if (drawStart < drawEnd)
             {
-                string fragment = expanded.Substring(drawStart, drawEnd - drawStart);
+                string fragment = expanded[drawStart..drawEnd];
                 int x = ViewportX(DisplayX(expanded, segStart, drawStart));
                 Color fg = spanFg != Color.Empty ? spanFg : defaultFg;
                 DrawTextAligned(g, fragment, _editorFont, x, y, fg);
@@ -1356,7 +1355,7 @@ public sealed class EditorSurface : Control
 
         if (cursor < segEnd)
         {
-            string fragment = expanded.Substring(cursor, segEnd - cursor);
+            string fragment = expanded[cursor..segEnd];
             int x = ViewportX(DisplayX(expanded, segStart, cursor));
             DrawTextAligned(g, fragment, _editorFont, x, y, defaultFg);
         }
@@ -1368,7 +1367,7 @@ public sealed class EditorSurface : Control
         if (colStart >= colEnd || colStart >= expanded.Length) return;
 
         int drawEnd = Math.Min(colEnd, expanded.Length);
-        string fragment = expanded.Substring(colStart, drawEnd - colStart);
+        string fragment = expanded[colStart..drawEnd];
         int x = ViewportX(DisplayX(expanded, hOffset, colStart));
 
         DrawTextAligned(g, fragment, _editorFont, x, y, fgColor);
@@ -1431,8 +1430,7 @@ public sealed class EditorSurface : Control
     }
 
     private void RenderColumnSelectionBackgroundWrap(Graphics g,
-        long docLine, string expanded, int segStartCharIdx,
-        int segVisColStart, int segVisColEnd, int y, Brush selBrush)
+        long docLine, int segVisColStart, int segVisColEnd, int y, Brush selBrush)
     {
         if (_selection is null || !_selection.HasColumnSelection) return;
         if (docLine < _selection.ColumnStartLine || docLine > _selection.ColumnEndLine) return;
@@ -1479,10 +1477,10 @@ public sealed class EditorSurface : Control
         DiffLine marker = DiffLineMarkers[docLine];
         Color? bgColor = marker.Type switch
         {
-            DiffLineType.Added    => _theme.DiffAddedBackground,
-            DiffLineType.Removed  => _theme.DiffRemovedBackground,
+            DiffLineType.Added => _theme.DiffAddedBackground,
+            DiffLineType.Removed => _theme.DiffRemovedBackground,
             DiffLineType.Modified => _theme.DiffModifiedBackground,
-            DiffLineType.Padding  => _theme.DiffPaddingBackground,
+            DiffLineType.Padding => _theme.DiffPaddingBackground,
             _ => null,
         };
 
@@ -1618,7 +1616,7 @@ public sealed class EditorSurface : Control
             }
         }
         segments.Add((rowStart, expanded.Length - rowStart));
-        return segments.ToArray();
+        return [.. segments];
     }
 
     /// <summary>
@@ -1696,7 +1694,7 @@ public sealed class EditorSurface : Control
             }
         }
         segments.Add((rowStart, expanded.Length - rowStart));
-        return segments.ToArray();
+        return [.. segments];
     }
 
     private static int GetWrapSegmentStart(string expanded, int maxVisualCols, int targetRow)
@@ -1772,8 +1770,7 @@ public sealed class EditorSurface : Control
         g.FillRectangle(selBrush, x1, y, x2 - x1, _lineHeight);
     }
 
-    private void RenderCaretWrapped(Graphics g, long firstVisibleLine,
-        int firstLineWrapOffset,
+    private void RenderCaretWrapped(Graphics g, int firstLineWrapOffset,
         (string Text, long StartOffset)[] lineData, long minDocLine,
         long[] docLines, int entryCount)
     {
@@ -1888,7 +1885,7 @@ public sealed class EditorSurface : Control
 
         int col = 0;        // character index in expanded string
         int dispPx = 0;     // pixel position from start of line
-        int hDispPx = 0;    // pixel position for hOffset
+        int hDispPx;    // pixel position for hOffset
         // Pre-compute pixel offset for hOffset.
         {
             string expanded = ExpandTabs(lineText);
@@ -2247,23 +2244,11 @@ public sealed class EditorSurface : Control
     protected override bool IsInputKey(Keys keyData)
     {
         // Ensure arrow keys, Tab, etc. are sent to the control.
-        switch (keyData & Keys.KeyCode)
+        return (keyData & Keys.KeyCode) switch
         {
-            case Keys.Up:
-            case Keys.Down:
-            case Keys.Left:
-            case Keys.Right:
-            case Keys.Tab:
-            case Keys.Home:
-            case Keys.End:
-            case Keys.PageUp:
-            case Keys.PageDown:
-            case Keys.Delete:
-            case Keys.Back:
-            case Keys.Enter:
-                return true;
-        }
-        return base.IsInputKey(keyData);
+            Keys.Up or Keys.Down or Keys.Left or Keys.Right or Keys.Tab or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown or Keys.Delete or Keys.Back or Keys.Enter => true,
+            _ => base.IsInputKey(keyData),
+        };
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
