@@ -124,8 +124,8 @@ public sealed class StatusBarManager
         // Position.
         _positionLabel.Text = string.Format(
             Strings.StatusPositionFormat,
-            editor.CurrentLine,
-            editor.CurrentColumn);
+            editor.CurrentLine+1,
+            editor.CurrentColumn+1);
 
         // Selection.
         int sel = editor.SelectionLength;
