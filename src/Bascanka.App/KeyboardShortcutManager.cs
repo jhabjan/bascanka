@@ -229,24 +229,4 @@ public sealed class KeyboardShortcutManager
             _ => key.ToString(),
         };
     }
-
-    // ── Inner types ──────────────────────────────────────────────────
-
-    private sealed class ShortcutBinding
-    {
-        public string CommandName { get; set; } = string.Empty;
-        public Keys Key { get; set; }
-        public bool Ctrl { get; set; }
-        public bool Shift { get; set; }
-        public bool Alt { get; set; }
-        public Action? Handler { get; set; }
-    }
-
-    private sealed class ShortcutData
-    {
-        public int Key { get; set; }
-        public bool Ctrl { get; set; }
-        public bool Shift { get; set; }
-        public bool Alt { get; set; }
-    }
 }

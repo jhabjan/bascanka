@@ -1677,8 +1677,7 @@ public sealed class EditorControl : UserControl
         _hScrollBar.BackColor = theme.ScrollBarBackground;
         BackColor = theme.EditorBackground;
 
-        if (_hexEditor is not null)
-            _hexEditor.Theme = theme;
+        _hexEditor?.Theme = theme;
 
         ApplyContextMenuTheme(theme);
     }
@@ -2164,7 +2163,7 @@ public sealed class EditorControl : UserControl
 
         var wrapFunc = _wordWrap ? (Func<long, int>)_surface.GetWrapRowCount : null;
         Func<long, (long, int)>? wrapMapFunc = _wordWrap ? _surface.WrapRowToDocumentLine : null;
-        long line = _gutterRenderer.GetLineFromY(
+        long line = GutterRenderer.GetLineFromY(
             e.Y, _surface.LineHeight, _scrollManager.FirstVisibleLine, _foldingManager, wrapFunc, wrapMapFunc);
 
         if (_gutterRenderer.IsFoldButtonHit(e.X))
@@ -2194,7 +2193,7 @@ public sealed class EditorControl : UserControl
 
         var wrapFunc2 = _wordWrap ? (Func<long, int>)_surface.GetWrapRowCount : null;
         Func<long, (long, int)>? wrapMapFunc2 = _wordWrap ? _surface.WrapRowToDocumentLine : null;
-        long line = _gutterRenderer.GetLineFromY(
+        long line = GutterRenderer.GetLineFromY(
             e.Y, _surface.LineHeight, _scrollManager.FirstVisibleLine, _foldingManager, wrapFunc2, wrapMapFunc2);
 
         if (line >= 0 && line < _document.LineCount)
@@ -2511,104 +2510,4 @@ public sealed class EditorControl : UserControl
 
         base.Dispose(disposing);
     }
-
-    // ────────────────────────────────────────────────────────────────────
-    //  Double-buffered panel (used for the gutter)
-    // ────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Custom renderer for the editor context menu that uses theme colours
-    /// for background, hover highlight, text, and separators.
-    /// </summary>
-    private sealed class ThemedContextMenuRenderer(ITheme theme) : ToolStripProfessionalRenderer
-    {
-        private readonly ITheme _theme = theme;
-
-        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
-        {
-            using var brush = new SolidBrush(_theme.MenuBackground);
-            e.Graphics.FillRectangle(brush, e.AffectedBounds);
-        }
-
-        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
-        {
-            var rect = new Rectangle(Point.Empty, e.Item.Size);
-            Color bg = e.Item.Selected || e.Item.Pressed ? _theme.MenuHighlight : _theme.MenuBackground;
-            using var brush = new SolidBrush(bg);
-            e.Graphics.FillRectangle(brush, rect);
-        }
-
-        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
-        {
-            e.TextColor = _theme.MenuForeground;
-            base.OnRenderItemText(e);
-        }
-
-        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
-        {
-            int y = e.Item.Height / 2;
-            Color sep = Color.FromArgb(
-                _theme.MenuBackground.A,
-                Math.Min(255, _theme.MenuBackground.R + 30),
-                Math.Min(255, _theme.MenuBackground.G + 30),
-                Math.Min(255, _theme.MenuBackground.B + 30));
-            using var pen = new Pen(sep);
-            e.Graphics.DrawLine(pen, 4, y, e.Item.Width - 4, y);
-        }
-
-        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
-        {
-            using var brush = new SolidBrush(_theme.MenuBackground);
-            e.Graphics.FillRectangle(brush, e.AffectedBounds);
-        }
-
-        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
-        {
-            Color border = Color.FromArgb(
-                _theme.MenuBackground.A,
-                Math.Min(255, _theme.MenuBackground.R + 40),
-                Math.Min(255, _theme.MenuBackground.G + 40),
-                Math.Min(255, _theme.MenuBackground.B + 40));
-            using var pen = new Pen(border);
-            e.Graphics.DrawRectangle(pen, 0, 0, e.AffectedBounds.Width - 1, e.AffectedBounds.Height - 1);
-        }
-    }
-
-    /// <summary>
-    /// A <see cref="Panel"/> subclass with double-buffering enabled to
-    /// eliminate flicker during rapid repainting (e.g. scrolling).
-    /// </summary>
-    private sealed class BufferedPanel : Panel
-    {
-        public BufferedPanel()
-        {
-            SetStyle(
-                ControlStyles.AllPaintingInWmPaint |
-                ControlStyles.UserPaint |
-                ControlStyles.OptimizedDoubleBuffer,
-                true);
-        }
-    }
-}
-
-/// <summary>
-/// Event arguments for the Find All operation, carrying the search options
-/// so that MainForm can run the search with progress reporting.
-/// </summary>
-public sealed class FindAllEventArgs(string searchPattern, SearchOptions options) : EventArgs
-{
-    /// <summary>The search pattern that was used.</summary>
-    public string SearchPattern { get; } = searchPattern;
-
-    /// <summary>The search options to use.</summary>
-    public SearchOptions Options { get; } = options ?? throw new ArgumentNullException(nameof(options));
-}
-
-/// <summary>
-/// Event arguments for the Find All in Tabs operation, carrying the search options.
-/// </summary>
-public sealed class FindAllInTabsEventArgs(SearchOptions options) : EventArgs
-{
-    /// <summary>The search options to use for the multi-tab search.</summary>
-    public SearchOptions Options { get; } = options ?? throw new ArgumentNullException(nameof(options));
 }

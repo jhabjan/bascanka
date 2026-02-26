@@ -2,6 +2,7 @@ using System.Drawing;
 using Bascanka.Core.Buffer;
 using Bascanka.Core.Diff;
 using Bascanka.Editor.Themes;
+using static Enums;
 
 namespace Bascanka.Editor.Controls;
 
@@ -17,7 +18,7 @@ public sealed class GutterRenderer
     private static int BookmarkDiameter => EditorControl.DefaultBookmarkSize;
     private static int FoldButtonSize => EditorControl.DefaultFoldButtonSize;
 
-    private readonly HashSet<long> _bookmarkedLines = new();
+    private readonly HashSet<long> _bookmarkedLines = [];
     private long _widthCacheTotalLines = -1;
     private string _widthCacheFontKey = string.Empty;
 
@@ -60,7 +61,7 @@ public sealed class GutterRenderer
             return;
 
         int digits = Math.Max(2, totalLines.ToString().Length);
-        string sample = new string('9', digits);
+        string sample = new('9', digits);
         Size textSize = TextRenderer.MeasureText(g, sample, font, Size.Empty,
             TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
@@ -209,9 +210,9 @@ public sealed class GutterRenderer
                 // Draw coloured gutter bar for diff lines.
                 Color? barColor = marker.Type switch
                 {
-                    DiffLineType.Added    => Color.FromArgb(200, 60, 190, 220),
-                    DiffLineType.Removed  => Color.FromArgb(200, 220, 70, 160),
-                    DiffLineType.Modified => Color.FromArgb(200, 170, 100, 245),
+					DiffLineType.Added    => Color.FromArgb(200, 60, 190, 220),
+					DiffLineType.Removed  => Color.FromArgb(200, 220, 70, 160),
+					DiffLineType.Modified => Color.FromArgb(200, 170, 100, 245),
                     _ => null,
                 };
                 if (barColor.HasValue)
@@ -298,7 +299,7 @@ public sealed class GutterRenderer
     /// <summary>
     /// Returns the document line index for a Y coordinate in the gutter.
     /// </summary>
-    public long GetLineFromY(int y, int lineHeight, long firstVisibleLine,
+    public static long GetLineFromY(int y, int lineHeight, long firstVisibleLine,
         FoldingManager? foldingManager, Func<long, int>? wrapRowCount = null,
         Func<long, (long DocLine, int WrapOffset)>? wrapRowToDocLine = null)
     {
@@ -307,10 +308,7 @@ public sealed class GutterRenderer
         if (wrapRowCount is not null && wrapRowToDocLine is not null)
         {
             var (startDocLine, wrapOff) = wrapRowToDocLine(firstVisibleLine);
-            int visualRow = 0;
-            long totalLines = foldingManager is not null
-                ? long.MaxValue // will be bounded by iteration
-                : long.MaxValue;
+            int visualRow = 0;           
 
             for (long docLine = startDocLine; ; docLine++)
             {

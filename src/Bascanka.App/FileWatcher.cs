@@ -7,26 +7,21 @@ namespace Bascanka.App;
 /// Creates one <see cref="FileSystemWatcher"/> per watched file and debounces
 /// rapid change notifications.
 /// </summary>
-public sealed class FileWatcher : IDisposable
+public sealed class FileWatcher(MainForm form) : IDisposable
 {
     /// <summary>Debounce interval to coalesce rapid file system events.</summary>
     private const int DebounceMilliseconds = 300;
 
-    private readonly MainForm _form;
+    private readonly MainForm _form = form;
     private readonly Dictionary<string, WatchEntry> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _suppressedPaths = new(StringComparer.OrdinalIgnoreCase);
     private bool _ignoreAll;
     private bool _disposed;
 
-    public FileWatcher(MainForm form)
-    {
-        _form = form;
-    }
-
-    /// <summary>
-    /// Starts watching the file associated with the given tab.
-    /// </summary>
-    public void Watch(TabInfo tab)
+	/// <summary>
+	/// Starts watching the file associated with the given tab.
+	/// </summary>
+	public void Watch(TabInfo tab)
     {
         if (tab.FilePath is null) return;
 
@@ -208,15 +203,5 @@ public sealed class FileWatcher : IDisposable
                 break;
             }
         }
-    }
-
-    // ── Inner types ──────────────────────────────────────────────────
-
-    private sealed class WatchEntry
-    {
-        public required FileSystemWatcher Watcher { get; init; }
-        public required string FilePath { get; init; }
-        public required System.Windows.Forms.Timer DebounceTimer { get; init; }
-        public bool PendingChange { get; set; }
     }
 }

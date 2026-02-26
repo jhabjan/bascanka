@@ -471,8 +471,7 @@ public sealed class HexRenderer : Control
         base.OnKeyDown(e);
         if (_data.Length == 0) return;
 
-        bool shift = e.Shift;
-        long oldOffset = _selectedOffset;
+        bool shift = e.Shift;        
 
         switch (e.KeyCode)
         {
@@ -634,27 +633,5 @@ public sealed class HexRenderer : Control
             _cursorTimer.Dispose();
         }
         base.Dispose(disposing);
-    }
-}
-
-/// <summary>
-/// Event arguments for a single-byte edit in the hex renderer.
-/// </summary>
-public sealed class HexEditEventArgs : EventArgs
-{
-    /// <summary>The byte offset that was edited.</summary>
-    public long Offset { get; }
-
-    /// <summary>The old byte value before the edit.</summary>
-    public byte OldValue { get; }
-
-    /// <summary>The new byte value after the edit.</summary>
-    public byte NewValue { get; }
-
-    public HexEditEventArgs(long offset, byte oldValue, byte newValue)
-    {
-        Offset = offset;
-        OldValue = oldValue;
-        NewValue = newValue;
     }
 }

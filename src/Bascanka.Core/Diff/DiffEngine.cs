@@ -1,3 +1,5 @@
+using static Enums;
+
 namespace Bascanka.Core.Diff;
 
 /// <summary>
@@ -153,15 +155,15 @@ public static class DiffEngine
             {
                 Title = leftTitle,
                 PaddedText = leftPadded,
-                Lines = leftDiffLines.ToArray(),
+                Lines = [.. leftDiffLines],
             },
             Right = new DiffSide
             {
                 Title = rightTitle,
                 PaddedText = rightPadded,
-                Lines = rightDiffLines.ToArray(),
+                Lines = [.. rightDiffLines],
             },
-            DiffSectionStarts = sectionStarts.ToArray(),
+            DiffSectionStarts = [.. sectionStarts],
             DiffCount = sectionStarts.Count,
         };
     }
@@ -391,11 +393,11 @@ public static class DiffEngine
         }
 
         // LCS on the middle portions.
-        var lcsFlags = ComputeLcsFlags(leftMid, rightMid);
+        var (leftInLcs, rightInLcs) = ComputeLcsFlags(leftMid, rightMid);
 
         // Build diff ranges for each side (chars NOT in LCS are changed).
-        var leftResult = BuildCharRanges(leftMid, lcsFlags.leftInLcs, prefixLen);
-        var rightResult = BuildCharRanges(rightMid, lcsFlags.rightInLcs, prefixLen);
+        var leftResult = BuildCharRanges(leftMid, leftInLcs, prefixLen);
+        var rightResult = BuildCharRanges(rightMid, rightInLcs, prefixLen);
 
         return (leftResult, rightResult);
     }

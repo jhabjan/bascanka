@@ -21,7 +21,7 @@ public sealed class CustomHighlightStore
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private List<CustomHighlightProfile> _profiles = new();
+    private List<CustomHighlightProfile> _profiles = [];
 
     /// <summary>All loaded profiles.</summary>
     public IReadOnlyList<CustomHighlightProfile> Profiles => _profiles;
@@ -74,10 +74,10 @@ public sealed class CustomHighlightStore
 
         var root = new RootDto
         {
-            CustomHighlighting = _profiles.Select(p => new ProfileDto
+            CustomHighlighting = [.. _profiles.Select(p => new ProfileDto
             {
                 Name = p.Name,
-                Rules = p.Rules.Select(r =>
+                Rules = [.. p.Rules.Select(r =>
                 {
                     bool isBlock = string.Equals(r.Scope, "block", StringComparison.OrdinalIgnoreCase);
                     return new RuleDto
@@ -90,8 +90,8 @@ public sealed class CustomHighlightStore
                         End = isBlock ? r.EndPattern : null,
                         Foldable = isBlock && r.Foldable ? true : null,
                     };
-                }).ToList(),
-            }).ToList(),
+                })],
+            })],
         };
 
         string json = JsonSerializer.Serialize(root, JsonOptions);
@@ -109,7 +109,7 @@ public sealed class CustomHighlightStore
     /// <summary>Replaces the in-memory profile list (call Save afterwards).</summary>
     public void SetProfiles(List<CustomHighlightProfile> profiles)
     {
-        _profiles = profiles ?? new();
+        _profiles = profiles ?? [];
     }
 
     /// <summary>Finds a profile by name (case-insensitive).</summary>
@@ -124,10 +124,10 @@ public sealed class CustomHighlightStore
     {
         var root = new RootDto
         {
-            CustomHighlighting = profiles.Select(p => new ProfileDto
+            CustomHighlighting = [.. profiles.Select(p => new ProfileDto
             {
                 Name = p.Name,
-                Rules = p.Rules.Select(r =>
+                Rules = [.. p.Rules.Select(r =>
                 {
                     bool isBlock = string.Equals(r.Scope, "block", StringComparison.OrdinalIgnoreCase);
                     return new RuleDto
@@ -140,8 +140,8 @@ public sealed class CustomHighlightStore
                         End = isBlock ? r.EndPattern : null,
                         Foldable = isBlock && r.Foldable ? true : null,
                     };
-                }).ToList(),
-            }).ToList(),
+                })],
+            })],
         };
 
         string json = JsonSerializer.Serialize(root, JsonOptions);
@@ -215,46 +215,5 @@ public sealed class CustomHighlightStore
     {
         if (color.IsEmpty || color == Color.Empty) return null;
         return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-    }
-
-    // ── DTOs ───────────────────────────────────────────────────────────
-
-    private sealed class RootDto
-    {
-        [JsonPropertyName("custom_highlighting")]
-        public List<ProfileDto>? CustomHighlighting { get; set; }
-    }
-
-    private sealed class ProfileDto
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("rules")]
-        public List<RuleDto>? Rules { get; set; }
-    }
-
-    private sealed class RuleDto
-    {
-        [JsonPropertyName("pattern")]
-        public string? Pattern { get; set; }
-
-        [JsonPropertyName("scope")]
-        public string? Scope { get; set; }
-
-        [JsonPropertyName("foreground")]
-        public string? Foreground { get; set; }
-
-        [JsonPropertyName("background")]
-        public string? Background { get; set; }
-
-        [JsonPropertyName("begin")]
-        public string? Begin { get; set; }
-
-        [JsonPropertyName("end")]
-        public string? End { get; set; }
-
-        [JsonPropertyName("foldable")]
-        public bool? Foldable { get; set; }
     }
 }

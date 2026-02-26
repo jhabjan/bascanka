@@ -1,24 +1,6 @@
 namespace Bascanka.Editor.Tabs;
 
 /// <summary>
-/// Event arguments for the <see cref="TabDragManager.TabMoved"/> event.
-/// </summary>
-public sealed class TabMovedEventArgs : EventArgs
-{
-    /// <summary>Original index of the dragged tab.</summary>
-    public int FromIndex { get; }
-
-    /// <summary>New index where the tab was dropped.</summary>
-    public int ToIndex { get; }
-
-    public TabMovedEventArgs(int fromIndex, int toIndex)
-    {
-        FromIndex = fromIndex;
-        ToIndex = toIndex;
-    }
-}
-
-/// <summary>
 /// Manages drag-to-reorder behaviour for a <see cref="TabStrip"/>.
 /// <para>
 /// When the user presses and holds a mouse button on a tab and then moves
@@ -220,14 +202,10 @@ public sealed class TabDragManager
     {
         _isDragging = false;
         _tabStrip.Capture = false;
+		_dragGhostBitmap?.Dispose();
+		_dragGhostBitmap = null;
 
-        if (_dragGhostBitmap is not null)
-        {
-            _dragGhostBitmap.Dispose();
-            _dragGhostBitmap = null;
-        }
-
-        _tabStrip.Invalidate();
+		_tabStrip.Invalidate();
 
         if (cancelled)
         {

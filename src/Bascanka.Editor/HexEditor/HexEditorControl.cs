@@ -7,28 +7,6 @@ using Bascanka.Editor.Themes;
 namespace Bascanka.Editor.HexEditor;
 
 /// <summary>
-/// Event arguments carrying information about a data change in the hex editor.
-/// </summary>
-public sealed class HexDataChangedEventArgs : EventArgs
-{
-    /// <summary>The offset of the changed byte.</summary>
-    public long Offset { get; }
-
-    /// <summary>The old byte value.</summary>
-    public byte OldValue { get; }
-
-    /// <summary>The new byte value.</summary>
-    public byte NewValue { get; }
-
-    public HexDataChangedEventArgs(long offset, byte oldValue, byte newValue)
-    {
-        Offset = offset;
-        OldValue = oldValue;
-        NewValue = newValue;
-    }
-}
-
-/// <summary>
 /// Main hex editor composite control.
 /// Composes a <see cref="HexRenderer"/> panel, a <see cref="DataInspectorPanel"/>,
 /// and a <see cref="VScrollBar"/> into a complete hex-editing experience with

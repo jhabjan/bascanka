@@ -148,7 +148,7 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
         // Draw a subtle border around dropdown menus.
         if (e.ToolStrip is ToolStripDropDownMenu)
         {
-            Color borderColor = Lighten(_theme.MenuBackground, 40);
+            Color borderColor = ColorHelper.Lighten(_theme.MenuBackground, 40);
             using var pen = new Pen(borderColor);
             var rect = e.AffectedBounds;
             e.Graphics.DrawRectangle(pen, 0, 0, rect.Width - 1, rect.Height - 1);
@@ -157,7 +157,7 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
 
     protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
     {
-        Color sepColor = SeparatorColor(_theme.MenuBackground);
+        Color sepColor = ColorHelper.SeparatorColor(_theme.MenuBackground);
         int y = e.Item.Height / 2;
         using var pen = new Pen(sepColor);
         e.Graphics.DrawLine(pen, 4, y, e.Item.Width - 4, y);
@@ -185,69 +185,6 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
         base.OnRenderItemCheck(e);
     }
 
-    private static Color Lighten(Color c, int amount) =>
-        Color.FromArgb(c.A,
-            Math.Min(255, c.R + amount),
-            Math.Min(255, c.G + amount),
-            Math.Min(255, c.B + amount));
-
-    /// <summary>
-    /// Returns a separator colour that contrasts with the background —
-    /// darkens on light backgrounds, lightens on dark backgrounds.
-    /// </summary>
-    private static Color SeparatorColor(Color bg)
-    {
-        float lum = (bg.R * 0.299f + bg.G * 0.587f + bg.B * 0.114f) / 255f;
-        int amount = 35;
-        if (lum > 0.5f)
-            // Light theme: darken
-            return Color.FromArgb(bg.A,
-                Math.Max(0, bg.R - amount),
-                Math.Max(0, bg.G - amount),
-                Math.Max(0, bg.B - amount));
-        else
-            // Dark theme: lighten
-            return Color.FromArgb(bg.A,
-                Math.Min(255, bg.R + amount),
-                Math.Min(255, bg.G + amount),
-                Math.Min(255, bg.B + amount));
-    }
-
-    /// <summary>
-    /// Custom colour table that overrides the professional colour scheme
-    /// with theme-aware colours.
-    /// </summary>
-    private sealed class ThemedColorTable : ProfessionalColorTable
-    {
-        private readonly ITheme _theme;
-
-        public ThemedColorTable(ITheme theme) => _theme = theme;
-
-        public override Color MenuStripGradientBegin => _theme.MenuBackground;
-        public override Color MenuStripGradientEnd => _theme.MenuBackground;
-        public override Color MenuItemSelected => _theme.MenuHighlight;
-        public override Color MenuItemSelectedGradientBegin => _theme.MenuHighlight;
-        public override Color MenuItemSelectedGradientEnd => _theme.MenuHighlight;
-        public override Color MenuItemPressedGradientBegin => _theme.MenuHighlight;
-        public override Color MenuItemPressedGradientEnd => _theme.MenuHighlight;
-        public override Color MenuBorder => Lighten(_theme.MenuBackground, 40);
-        public override Color MenuItemBorder => _theme.MenuHighlight;
-        public override Color ImageMarginGradientBegin => _theme.MenuBackground;
-        public override Color ImageMarginGradientMiddle => _theme.MenuBackground;
-        public override Color ImageMarginGradientEnd => _theme.MenuBackground;
-        public override Color SeparatorDark => SeparatorColor(_theme.MenuBackground);
-        public override Color SeparatorLight => SeparatorColor(_theme.MenuBackground);
-        public override Color ToolStripDropDownBackground => _theme.MenuBackground;
-        public override Color ToolStripContentPanelGradientBegin => _theme.MenuBackground;
-        public override Color ToolStripContentPanelGradientEnd => _theme.MenuBackground;
-        public override Color CheckBackground => _theme.MenuHighlight;
-        public override Color CheckSelectedBackground => _theme.MenuHighlight;
-        public override Color CheckPressedBackground => _theme.MenuHighlight;
-
-        private static Color Lighten(Color c, int amount) =>
-            Color.FromArgb(c.A,
-                Math.Min(255, c.R + amount),
-                Math.Min(255, c.G + amount),
-                Math.Min(255, c.B + amount));
-    }
+   
+   
 }

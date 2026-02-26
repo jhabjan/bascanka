@@ -6,6 +6,7 @@ using Bascanka.Core.Search;
 using Bascanka.Core.Syntax;
 using Bascanka.Editor.Highlighting;
 using Bascanka.Editor.Themes;
+using static Enums;
 
 namespace Bascanka.Editor.Controls;
 
@@ -1477,10 +1478,10 @@ public sealed class EditorSurface : Control
         DiffLine marker = DiffLineMarkers[docLine];
         Color? bgColor = marker.Type switch
         {
-            DiffLineType.Added => _theme.DiffAddedBackground,
-            DiffLineType.Removed => _theme.DiffRemovedBackground,
-            DiffLineType.Modified => _theme.DiffModifiedBackground,
-            DiffLineType.Padding => _theme.DiffPaddingBackground,
+			DiffLineType.Added => _theme.DiffAddedBackground,
+			DiffLineType.Removed => _theme.DiffRemovedBackground,
+			DiffLineType.Modified => _theme.DiffModifiedBackground,
+			DiffLineType.Padding => _theme.DiffPaddingBackground,
             _ => null,
         };
 
