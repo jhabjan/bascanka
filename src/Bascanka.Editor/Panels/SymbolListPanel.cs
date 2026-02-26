@@ -186,9 +186,7 @@ public class SymbolListPanel : UserControl
             return;
         }
 
-        List<SymbolInfo> filtered = _allSymbols
-            .Where(s => s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        List<SymbolInfo> filtered = [.. _allSymbols.Where(s => s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))];
 
         PopulateTree(filtered);
     }
@@ -368,19 +366,5 @@ public class SymbolListPanel : UserControl
             _iconList.Dispose();
         }
         base.Dispose(disposing);
-    }
-}
-
-/// <summary>
-/// Event arguments for symbol navigation.
-/// </summary>
-public sealed class SymbolNavigationEventArgs : EventArgs
-{
-    /// <summary>The symbol the user wants to navigate to.</summary>
-    public SymbolInfo Symbol { get; }
-
-    public SymbolNavigationEventArgs(SymbolInfo symbol)
-    {
-        Symbol = symbol;
     }
 }

@@ -23,26 +23,8 @@ namespace Bascanka.Editor.Rendering;
 /// </remarks>
 public sealed class RenderCache : IDisposable
 {
-    // ── LRU bookkeeping ───────────────────────────────────────────────
 
-    /// <summary>
-    /// An entry in the LRU cache, stored in a doubly-linked list so that
-    /// promotion and eviction are O(1).
-    /// </summary>
-    private sealed class CacheEntry
-    {
-        public long Line;
-        public Bitmap Bitmap;
-        public LinkedListNode<CacheEntry>? Node;
-
-        public CacheEntry(long line, Bitmap bitmap)
-        {
-            Line = line;
-            Bitmap = bitmap;
-        }
-    }
-
-    private readonly Dictionary<long, CacheEntry> _map = new();
+    private readonly Dictionary<long, CacheEntry> _map = [];
     private readonly LinkedList<CacheEntry> _lruList = new();
     private bool _disposed;
 

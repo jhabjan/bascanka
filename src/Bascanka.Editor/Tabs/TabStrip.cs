@@ -1,37 +1,8 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using Bascanka.Editor.Themes;
 
 namespace Bascanka.Editor.Tabs;
-
-/// <summary>
-/// Event arguments for tab-related events that carry an index.
-/// </summary>
-public sealed class TabEventArgs : EventArgs
-{
-    /// <summary>Zero-based index of the affected tab.</summary>
-    public int Index { get; }
-
-    public TabEventArgs(int index) => Index = index;
-}
-
-/// <summary>
-/// Event arguments raised before a tab context menu is displayed, allowing
-/// consumers to customise the menu.
-/// </summary>
-public sealed class TabContextMenuOpeningEventArgs : EventArgs
-{
-    /// <summary>Zero-based index of the tab that was right-clicked.</summary>
-    public int Index { get; }
-
-    /// <summary>The context menu about to be shown.  Handlers may add items.</summary>
-    public ContextMenuStrip Menu { get; }
-
-    public TabContextMenuOpeningEventArgs(int index, ContextMenuStrip menu)
-    {
-        Index = index;
-        Menu = menu;
-    }
-}
 
 /// <summary>
 /// A custom-drawn tab strip that displays a horizontal row of document tabs.
@@ -71,7 +42,7 @@ public class TabStrip : Control
     private int _hoverTabIndex = -1;
     private int _hoverCloseIndex = -1;
     private ITheme? _theme;
-    private TabDragManager? _dragManager;
+    private readonly TabDragManager? _dragManager;
     private readonly ContextMenuStrip _contextMenu;
 
     // ── Events ────────────────────────────────────────────────────────
@@ -164,13 +135,7 @@ public class TabStrip : Control
                 _contextMenu.Renderer = ContextMenuRenderer(value);
             Invalidate();
         }
-    }
-
-    /// <summary>
-    /// Raised when the user requests to close a tab (via close button or context menu).
-    /// This is an <c>EventHandler&lt;int&gt;</c> alias for <see cref="TabClosed"/>.
-    /// </summary>
-    public event EventHandler<int>? TabCloseRequested;
+    }    
 
     /// <summary>Sets the active tab by index (alias for <see cref="SelectedIndex"/>).</summary>
     public void SetActiveTab(int index)
@@ -182,7 +147,7 @@ public class TabStrip : Control
     }
 
     /// <summary>Updates the display title for the tab at the given index.</summary>
-    public void UpdateTab(int index, string title)
+    public void UpdateTab(int index)
     {
         if (index < 0 || index >= _tabs.Count) return;
         Invalidate();
@@ -862,6 +827,11 @@ public class TabStrip : Control
         {
             _contextMenu.Dispose();
         }
-        base.Dispose(disposing);
+
+        // Avoid calling Windows-only APIs on non-Windows platforms to satisfy CA1416.
+        if (OperatingSystem.IsWindows())
+        {
+            base.Dispose(disposing);
+        }
     }
 }

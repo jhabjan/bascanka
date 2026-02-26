@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.Loader;
 using Bascanka.Plugins.Api;
+using KeyEventArgs2 = Bascanka.Plugins.Api.KeyEventArgs2;
 
 namespace Bascanka.App;
 
@@ -458,40 +459,5 @@ public sealed class PluginHost(MainForm form) : IEditorHost, IMenuApi, IPanelApi
         int insertIndex = Math.Max(0, _form.MainMenu.Items.Count - 1);
         _form.MainMenu.Items.Insert(insertIndex, newMenu);
         return newMenu;
-    }
-
-    // ── Inner types ──────────────────────────────────────────────────
-
-    private sealed class LoadedPlugin
-    {
-        public required IPlugin Plugin { get; init; }
-        public required string SourcePath { get; init; }
-        public AssemblyLoadContext? LoadContext { get; init; }
-    }
-
-    /// <summary>
-    /// Isolated, collectible <see cref="AssemblyLoadContext"/> for loading plugin assemblies.
-    /// This allows plugins to be unloaded at runtime.
-    /// </summary>
-    private sealed class PluginLoadContext(string pluginPath) : AssemblyLoadContext(isCollectible: true)
-    {
-        private readonly AssemblyDependencyResolver _resolver = new(pluginPath);
-
-        protected override Assembly? Load(AssemblyName assemblyName)
-        {
-            // Try to resolve from the plugin's directory first.
-            string? path = _resolver.ResolveAssemblyToPath(assemblyName);
-            if (path is not null)
-                return LoadFromAssemblyPath(path);
-
-            // Fall back to the default context (shared assemblies like Bascanka.Plugins.Api).
-            return null;
-        }
-
-        protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
-        {
-            string? path = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
-            return path is not null ? LoadUnmanagedDllFromPath(path) : IntPtr.Zero;
-        }
     }
 }
